@@ -70,5 +70,7 @@ export const api = {
   like: (postId) => request('/api/posts', { method: 'POST', body: { op: 'like', post_id: postId } }),
   comment: (postId, body) => request('/api/posts', { method: 'POST', body: { op: 'comment', post_id: postId, ...body } }),
   stats: () => request('/api/stats'),
+  moderation: () => request('/api/moderation'),
+  moderate: (body) => request('/api/moderation', { method: 'POST', body }),
   adminCheck: (key) => request('/api/admin/check', { method: 'POST', body: { key } }),
 };

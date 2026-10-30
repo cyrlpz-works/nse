@@ -109,6 +109,14 @@
       <button class="btn btn-primary btn-block" type="submit" id="postSubmit">Publish post</button>
     </form>
 
+    <section class="panel moderation" id="moderationQueue" hidden aria-labelledby="queueTitle">
+      <div class="section-head">
+        <h2 id="queueTitle">Awaiting approval</h2>
+        <small id="queueCount" aria-live="polite"></small>
+      </div>
+      <div id="queueList"></div>
+    </section>
+
     <div class="toolbar">
       <div class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg>

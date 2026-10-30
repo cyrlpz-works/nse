@@ -29,26 +29,38 @@ The preview server serves `dist/` and runs the real `functions/routes.mjs` again
 in-memory adapter, so the whole flow (post → like → comment → team → join) works without
 cloud credentials. That adapter does not prove real database behaviour.
 
-## Admin mode
+## Admin mode and moderation
 
 `POST /api/admin/check` compares the typed key with the `ADMIN_KEY` Secret inside the
 Function. On success the browser keeps the key in `sessionStorage` (`jt.admin`) for that tab
-and sends it as `x-admin-key` on every write. The Function re-checks the header on each
-mutation, so hiding the buttons is only the visible half — the server is the actual gate.
+and sends it as `x-admin-key` on every write. The Function re-checks the header, so hiding the
+buttons is only the visible half — the server is the actual gate.
+
+Anyone can write a post or a comment. Without a valid admin key the Function stores it with
+`status = 'pending'`, and pending rows are invisible everywhere except the queue and the
+author's own profile. A request carrying the admin key is stored as `approved` immediately.
 
 | Route | Who can use it |
 | --- | --- |
-| `GET /api/posts`, `/api/teams`, `/api/stats`, `/api/comments` | anyone |
-| `POST` create post / like / comment / create team / join | admin key only |
+| `GET /api/posts`, `/api/teams`, `/api/stats`, `/api/comments` | anyone (approved rows only) |
+| `?author_only=true` | anyone — their own posts, pending included |
+| `POST /api/posts` create post / comment | anyone → enters the queue (admin key = instant publish) |
+| `POST /api/posts` like | anyone, on approved posts |
+| `GET /api/moderation` | admin key only |
+| `POST /api/moderation` `op: approve / reject` | admin key only — approve sets `status`, reject deletes |
+| `POST /api/teams`, `/api/join` | admin key only |
 
-A visitor sees the feed and rosters with counts, the read-only notice, and their own local
-profile — no composer, no create-team button, no join button.
+The Community page shows the admin an "Awaiting approval" panel with Approve / Reject per item;
+a rejected post also loses its comments and likes. Visitors see the composer, a
+"Waiting for admin approval" flag on their own queued posts, and no create-squad button.
 
 Notes and limits of this design:
-- The key is held in that browser tab; anyone with the admin's unlocked session can post.
+- The key is held in that browser tab; anyone with the admin's unlocked session can publish.
 - Failed unlocks are capped at 8 per visitor per 15 minutes (best effort, in-process).
-- With no `ADMIN_KEY` Secret configured, every write fails closed with `admin_key_missing`.
+- With no `ADMIN_KEY` Secret configured, admin routes fail closed with `admin_key_missing`;
+  visitor submissions still queue instead of publishing.
 - Rename or rotate the key in Site Settings whenever the community grows.
+- Visitor-to-visitor moderation is per item; the queue has no bulk actions yet.
 
 ## Ranked ladder
 
@@ -83,12 +95,14 @@ The browser only ever calls same-origin `/functions/v1/app/...`. Database creden
 inside the Function; the site's declared `accessPolicies` are private, so nothing reaches
 Postgres without going through `routes.mjs`.
 
-The site starts **empty on purpose**: no demo squads, no sample posts. First content comes
-from the admin.
+The site starts **empty on purpose**: no demo squads, no sample posts. The first posts can come
+from any visitor — they wait in the approval queue until the admin releases them.
 
 Guards implemented in the Function: whitelist-checked categories and rank tiers, length
 limits (1200 chars per post, 300 per comment, 40 per team name), UUID-shaped visitor IDs,
-duplicate squad-name rejection, and idempotent join requests with slot-capacity checks.
+60-second cooldown between submissions per visitor for posts and for comments, approval
+required for every visitor post and comment, duplicate squad-name rejection, and idempotent
+join requests with slot-capacity checks.
 
 ## Publishing
 

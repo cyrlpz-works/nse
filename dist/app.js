@@ -104,6 +104,7 @@ const ERRORS = {
   missing_nickname: 'Set your nickname on the Profile page first.',
   post_too_long: 'That post is too long (max 1200 characters).',
   payload_too_large: 'That post is too long (max 1200 characters).',
+  too_short: 'Wait a minute before sending another one.',
   not_found: 'That entry no longer exists.',
   team_full: 'That squad already has a full roster.',
   admin_required: 'That admin key is not correct.',
@@ -172,19 +173,21 @@ function paintHeader() {
 
 function paintAdminUi() {
   const button = $('adminButton');
+  const submitLabel = state.isAdmin ? 'Publish post' : 'Send for approval';
   button.textContent = state.isAdmin ? 'Admin mode: on' : 'Admin mode';
   button.classList.toggle('is-on', state.isAdmin);
   button.setAttribute('aria-label', state.isAdmin
     ? 'Admin mode is on. Click to sign out of admin mode'
     : 'Open admin mode to publish content');
-  const writingDisabled = state.offline || !state.isAdmin;
-  $('postForm').hidden = writingDisabled;
-  $('openCreateTeam').hidden = writingDisabled;
+  $('postForm').hidden = state.offline;
+  $('postSubmit').textContent = submitLabel;
+  $('openCreateTeam').hidden = state.offline || !state.isAdmin;
   const notice = $('modeNotice');
-  notice.hidden = !writingDisabled;
+  notice.hidden = state.isAdmin && !state.offline;
   notice.textContent = state.offline
     ? 'This host serves the pages only — no community service runs here, so the feed and squads stay empty and nothing can be published. The live site needs its backend.'
-    : 'Read-only community — the site admin publishes posts, comments, squads and join requests. Your profile stays on this device.';
+    : 'Anyone can post, but the site admin approves every post and comment before it appears in the feed. Squads are published by the admin. Your profile stays on this device.';
+  renderModeration();
 }
 
 /* ---------------- shared renderers ---------------- */
@@ -193,8 +196,20 @@ function postNode(post) {
   article.className = 'card post-card';
   article.dataset.id = post.id;
 
-  const open = state.openComments.has(post.id);
+  // A pending post is only ever rendered back to the visitor who wrote it.
+  const pending = post.status === 'pending';
+  const open = !pending && state.openComments.has(post.id);
   const cached = state.commentsByPost.get(post.id);
+
+  const actions = pending ? '' : `
+    <button class="icon-btn" type="button" data-like="${esc(post.id)}" aria-pressed="${post.liked_by_me ? 'true' : 'false'}"
+      title="Like this post" aria-label="Like this post, ${post.likes} likes">
+      ${HEART}<span aria-hidden="true">${post.likes}</span>
+    </button>
+    <button class="icon-btn" type="button" data-comments="${esc(post.id)}" aria-expanded="${open ? 'true' : 'false'}"
+      title="Show comments" aria-label="Show comments, ${post.comments} comments">
+      ${BUBBLE}<span aria-hidden="true">${post.comments}</span>
+    </button>`;
 
   article.innerHTML = `
     <div class="post-head">
@@ -210,19 +225,9 @@ function postNode(post) {
         </div>
       </div>
     </div>
+    ${pending ? '<p class="pending-flag">Waiting for admin approval — only you can see this post.</p>' : ''}
     <p class="post-body">${esc(post.content)}</p>
-    <div class="post-actions">
-      ${state.isAdmin
-        ? `<button class="icon-btn" type="button" data-like="${esc(post.id)}" aria-pressed="${post.liked_by_me ? 'true' : 'false'}"
-             title="Like this post" aria-label="Like this post, ${post.likes} likes">
-             ${HEART}<span aria-hidden="true">${post.likes}</span>
-           </button>`
-        : `<span class="count-chip" title="Likes">${HEART}<span>${post.likes}</span></span>`}
-      <button class="icon-btn" type="button" data-comments="${esc(post.id)}" aria-expanded="${open ? 'true' : 'false'}"
-        title="Show comments" aria-label="Show comments, ${post.comments} comments">
-        ${BUBBLE}<span aria-hidden="true">${post.comments}</span>
-      </button>
-    </div>
+    ${actions ? `<div class="post-actions">${actions}</div>` : ''}
     <div class="comments${open ? ' is-open' : ''}" data-comments-panel="${esc(post.id)}">
       ${open ? commentsMarkup(cached, state.loadingComments.has(post.id)) : ''}
     </div>`;
@@ -369,6 +374,72 @@ function renderFeed() {
     list.forEach(post => host.appendChild(postNode(post)));
   }
   $('loadMore').hidden = !(state.hasMore && !state.search.trim());
+}
+
+/* ---------------- review queue (admin only) ---------------- */
+function queueNode(kind, item, meta) {
+  const node = document.createElement('div');
+  node.className = 'queue-item';
+  node.innerHTML = `
+    <div class="queue-text">
+      <p class="queue-byline"><b>${esc(item.author)}</b> · ${meta} · ${esc(timeAgo(item.created_at))}</p>
+      <p>${esc(item.content)}</p>
+    </div>
+    <div class="queue-actions">
+      <button class="btn btn-primary btn-sm" type="button" data-moderate="approve:${kind}:${esc(item.id)}">Approve</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-moderate="reject:${kind}:${esc(item.id)}">Reject</button>
+    </div>`;
+  return node;
+}
+
+async function renderModeration() {
+  const panel = $('moderationQueue');
+  if (!panel) return;
+  const list = $('queueList');
+  const count = $('queueCount');
+  if (state.offline || !state.isAdmin) {
+    panel.hidden = true;
+    list.replaceChildren();
+    count.textContent = '';
+    return;
+  }
+  panel.hidden = false;
+  list.innerHTML = '<div class="skeleton" style="min-height:72px"></div>';
+  try {
+    const queue = await api.moderation();
+    const posts = queue.posts || [];
+    const comments = queue.comments || [];
+    count.textContent = `${posts.length + comments.length} waiting`;
+    if (!posts.length && !comments.length) {
+      list.replaceChildren(emptyBlock('Nothing waiting — the feed is clean.'));
+      return;
+    }
+    list.replaceChildren(
+      ...posts.map(item => queueNode('post', item,
+        `<span class="badge pink">${esc(item.rank)}</span> <span class="badge">${esc(item.category)}</span>`)),
+      ...comments.map(item => queueNode('comment', item,
+        `commenting on <i>${esc(item.post_author || 'a removed post')}</i>: “${esc(item.post_excerpt)}”`)),
+    );
+  } catch (error) {
+    count.textContent = '';
+    list.replaceChildren(emptyBlock(explain(error)));
+  }
+}
+
+async function moderate(op, kind, id, button) {
+  button.disabled = true;
+  try {
+    await api.moderate({ op, kind, id });
+    toast(op === 'approve' ? 'Approved — it is live in the feed.' : 'Rejected — removed.');
+    await Promise.all([loadPosts({ reset: true }), loadStats(), loadTeams()]);
+    paintRoute();
+    renderModeration();
+  } catch (error) {
+    toast(explain(error), true);
+    renderModeration();
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderChips() {
@@ -632,20 +703,22 @@ async function publishPost(content) {
   button.disabled = true;
   button.textContent = 'Publishing…';
   try {
-    await api.post({ content, category: state.category, nickname: profileName(), rank: rankLabel() });
+    const result = await api.post({ content, category: state.category, nickname: profileName(), rank: rankLabel() });
     $('postText').value = '';
     updateCharCount();
     await loadPosts({ reset: true });
     await loadStats();
     renderFeed();
-    toast('Posted to the community feed.');
+    toast(result?.status === 'approved'
+      ? 'Posted to the community feed.'
+      : 'Sent to the admin — it appears in the feed once approved.');
     return true;
   } catch (error) {
     toast(explain(error), true);
     return false;
   } finally {
     button.disabled = false;
-    button.textContent = 'Publish post';
+    button.textContent = state.isAdmin ? 'Publish post' : 'Send for approval';
   }
 }
 
@@ -678,10 +751,15 @@ async function toggleComments(postId) {
 async function addComment(postId, content) {
   const post = state.posts.find(p => p.id === postId);
   try {
-    await api.comment(postId, { content, nickname: profileName() });
-    if (post) post.comments += 1;
-    state.commentsByPost.set(postId, await api.comments(postId));
-    refreshPostNode(postId);
+    const result = await api.comment(postId, { content, nickname: profileName() });
+    if (result.status === 'approved') {
+      if (post) post.comments += 1;
+      state.commentsByPost.set(postId, await api.comments(postId));
+      refreshPostNode(postId);
+      toast('Comment added.');
+    } else {
+      toast('Sent to the admin for approval.');
+    }
   } catch (error) {
     toast(explain(error), true);
   }
@@ -740,9 +818,14 @@ async function createTeam(form) {
 
 /* ---------------- comment composer inside panel ---------------- */
 function attachCommentComposer(node, postId) {
-  if (!state.isAdmin) return;
   const panel = node.querySelector(`[data-comments-panel="${CSS.escape(postId)}"]`);
   if (!panel || panel.querySelector('form')) return;
+  if (!state.isAdmin) {
+    const hint = document.createElement('p');
+    hint.className = 'field-hint';
+    hint.textContent = 'Your comment goes to the admin for approval before anyone sees it.';
+    panel.appendChild(hint);
+  }
   const form = document.createElement('form');
   form.style.cssText = 'display:flex;gap:.5rem;margin-top:.6rem';
   form.innerHTML = `<input class="input" maxlength="300" placeholder="Write a comment…" aria-label="Write a comment" required>
@@ -779,6 +862,13 @@ function bindEvents() {
 
     const comments = event.target.closest('[data-comments]');
     if (comments) { toggleComments(comments.dataset.comments); return; }
+
+    const review = event.target.closest('[data-moderate]');
+    if (review) {
+      const [op, kind, id] = review.dataset.moderate.split(':');
+      moderate(op, kind, id, review);
+      return;
+    }
 
     const join = event.target.closest('[data-join]');
     if (join) { joinTeam(join.dataset.join); return; }

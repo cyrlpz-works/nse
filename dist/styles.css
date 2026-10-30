@@ -386,16 +386,40 @@ main { padding-block: clamp(1.75rem, 4vw, 3.25rem) 4rem; }
 .icon-btn[aria-pressed='true'] { color: var(--pink-bright); border-color: rgba(255, 45, 120, 0.45); background: rgba(255, 45, 120, 0.12); }
 .icon-btn svg { width: 15px; height: 15px; fill: currentColor; }
 
-/* Read-only counters shown to visitors in place of the like button. */
-.count-chip {
-  display: inline-flex; align-items: center; gap: 0.45rem;
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--muted);
-  font-size: 0.8rem; font-weight: 600;
+/* ---------------- Review queue ---------------- */
+.moderation {
+  margin-top: 1.25rem;
+  padding: 1.25rem 1.25rem 1.4rem;
+  border-color: rgba(255, 176, 32, 0.3);
 }
-.count-chip svg { width: 15px; height: 15px; fill: currentColor; }
+.moderation .section-head { margin-bottom: 0.9rem; }
+.queue-item {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  padding: 0.85rem 0; border-top: 1px solid var(--line);
+}
+.queue-item p { margin: 0; }
+.queue-text { flex: 1; min-width: 0; }
+.queue-text > p + p {
+  margin-top: 0.35rem; color: var(--text); font-size: 0.92rem;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.queue-byline { font-size: 0.8rem; color: var(--dim); }
+.queue-byline b { color: var(--text); }
+.queue-byline i { font-style: normal; color: var(--muted); }
+.queue-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+.pending-flag {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  margin: 0 0 0.7rem; padding: 0.35rem 0.7rem;
+  border: 1px solid rgba(255, 176, 32, 0.32); border-radius: 999px;
+  background: rgba(255, 176, 32, 0.08); color: var(--warn);
+  font-size: 0.76rem; font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .queue-item { flex-direction: column; align-items: stretch; }
+  .queue-actions { justify-content: flex-end; }
+}
 
 /* ---------------- Comments ---------------- */
 .comments { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--line); display: none; }

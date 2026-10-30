@@ -5,10 +5,12 @@ CREATE TABLE app.posts (
   rank text NOT NULL,
   category text NOT NULL,
   content text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX posts_created_at_idx ON app.posts (created_at);
 CREATE INDEX posts_visitor_idx ON app.posts (visitor_id);
+CREATE INDEX posts_status_idx ON app.posts (status);
 
 CREATE TABLE app.comments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -16,9 +18,11 @@ CREATE TABLE app.comments (
   visitor_id text NOT NULL,
   author text NOT NULL,
   content text NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX comments_post_idx ON app.comments (post_id);
+CREATE INDEX comments_status_idx ON app.comments (status);
 
 CREATE TABLE app.likes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

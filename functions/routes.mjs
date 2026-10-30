@@ -47,11 +47,16 @@ export function application({ db, BackendError, env }) {
     return diff === 0;
   };
 
-  // Every write goes through this: the key lives in the site's Secret, never in source.
-  function requireAdmin(request) {
+  // Admin writes publish straight away; everyone else lands in the review queue.
+  function isAdminRequest(request) {
     const configured = env?.get('ADMIN_KEY');
-    if (!configured) fail('admin_key_missing', 503);
-    if (!safeEqual(request.headers.get('x-admin-key') || '', configured)) fail('admin_required', 403);
+    return Boolean(configured) && safeEqual(request.headers.get('x-admin-key') || '', configured);
+  }
+
+  // Admin-only routes fail closed: no Secret configured means nobody can moderate.
+  function requireAdmin(request) {
+    if (!env?.get('ADMIN_KEY')) fail('admin_key_missing', 503);
+    if (!isAdminRequest(request)) fail('admin_required', 403);
   }
 
   const attempts = new Map();
@@ -97,6 +102,15 @@ export function application({ db, BackendError, env }) {
     fail('invalid_input', 400);
   }
 
+  // One submission per visitor per window keeps drive-by spam out of the queue.
+  const SUBMIT_COOLDOWN_MS = 60000;
+  async function assertFreshSubmission(table, visitor, isAdmin) {
+    if (isAdmin) return;
+    const since = new Date(Date.now() - SUBMIT_COOLDOWN_MS).toISOString();
+    const recent = rows(await db.from(table).select('id').eq('visitor_id', visitor).gte('created_at', since).limit(1));
+    if (recent.length) fail('too_short', 429);
+  }
+
   async function countRows(table, filters = []) {
     let query = db.from(table).select('id', { count: 'exact' });
     filters.forEach(([column, value]) => { query = query.eq(column, value); });
@@ -111,8 +125,11 @@ export function application({ db, BackendError, env }) {
     const offset = pageParam(params.get('offset'), 0, 500, 0);
     const authorOnly = params.get('author_only') === 'true';
 
-    let query = db.from('posts').select('id,content,category,author,rank,created_at,visitor_id');
+    // The public feed is approved-only. "My posts" also shows this visitor's own
+    // submissions that are still waiting for review, never anyone else's.
+    let query = db.from('posts').select('id,content,category,author,rank,status,created_at,visitor_id');
     if (authorOnly) query = query.eq('visitor_id', visitor);
+    else query = query.eq('status', 'approved');
     const result = await query.order('created_at', { ascending: false }).range(offset, offset + limit);
     const items = rows(result);
 
@@ -123,7 +140,7 @@ export function application({ db, BackendError, env }) {
     if (ids.length) {
       const gathered = await Promise.all([
         db.from('likes').select('post_id,visitor_id').in('post_id', ids).limit(5000),
-        db.from('comments').select('post_id').in('post_id', ids).limit(5000),
+        db.from('comments').select('post_id').eq('status', 'approved').in('post_id', ids).limit(5000),
         db.from('likes').select('post_id').eq('visitor_id', visitor).limit(2000),
       ]);
       likes = rows(gathered[0]);
@@ -143,6 +160,7 @@ export function application({ db, BackendError, env }) {
       category: post.category,
       author: post.author,
       rank: post.rank,
+      status: post.status,
       created_at: post.created_at,
       likes: likeCount.get(post.id) || 0,
       comments: commentCount.get(post.id) || 0,
@@ -152,11 +170,12 @@ export function application({ db, BackendError, env }) {
     return Response.json({ posts, hasMore: items.length > limit, nextOffset: offset + Math.min(items.length, limit) });
   }
 
-  async function createPost(input, visitor) {
+  async function createPost(input, visitor, isAdmin) {
     const content = text(input.content, { min: 3, max: 1200 });
     if (!content) fail('post_too_long', 413);
     const nickname = text(input.nickname, { min: 2, max: 24 });
     if (!nickname) fail('missing_nickname', 400);
+    await assertFreshSubmission('posts', visitor, isAdmin);
     const record = {
       id: crypto.randomUUID(),
       visitor_id: visitor,
@@ -164,10 +183,11 @@ export function application({ db, BackendError, env }) {
       rank: normalizeRank(input.rank) || 'Unranked',
       category: oneOf(input.category, CATEGORIES, 'General'),
       content,
+      status: isAdmin ? 'approved' : 'pending',
       created_at: new Date().toISOString(),
     };
     rows(await db.from('posts').insert(record).select('id').limit(1));
-    return Response.json({ id: record.id, created_at: record.created_at }, { status: 201 });
+    return Response.json({ id: record.id, status: record.status, created_at: record.created_at }, { status: 201 });
   }
 
   async function toggleLike(input, visitor) {
@@ -177,7 +197,7 @@ export function application({ db, BackendError, env }) {
     if (existing.length) {
       rows(await db.from('likes').delete().eq('post_id', postId).eq('visitor_id', visitor).select('id').limit(1));
     } else {
-      const post = rows(await db.from('posts').select('id').eq('id', postId).limit(1));
+      const post = rows(await db.from('posts').select('id').eq('id', postId).eq('status', 'approved').limit(1));
       if (!post.length) fail('not_found', 404);
       rows(await db.from('likes').insert({ id: crypto.randomUUID(), post_id: postId, visitor_id: visitor, created_at: new Date().toISOString() }).select('id').limit(1));
     }
@@ -185,26 +205,84 @@ export function application({ db, BackendError, env }) {
     return Response.json({ liked: existing.length === 0, likes: total });
   }
 
-  async function addComment(input, visitor) {
+  async function addComment(input, visitor, isAdmin) {
     const postId = text(input.post_id, { min: 36, max: 36 });
     if (!uuid(postId)) fail('invalid_input', 400);
     const content = text(input.content, { min: 2, max: 300 });
     if (!content) fail('invalid_input', 400);
     const nickname = text(input.nickname, { min: 2, max: 24 });
     if (!nickname) fail('missing_nickname', 400);
-    const post = rows(await db.from('posts').select('id').eq('id', postId).limit(1));
+    await assertFreshSubmission('comments', visitor, isAdmin);
+    const post = rows(await db.from('posts').select('id').eq('id', postId).eq('status', 'approved').limit(1));
     if (!post.length) fail('not_found', 404);
-    rows(await db.from('comments').insert({
-      id: crypto.randomUUID(), post_id: postId, visitor_id: visitor, author: nickname, content, created_at: new Date().toISOString(),
-    }).select('id').limit(1));
-    return Response.json({ ok: true }, { status: 201 });
+    const record = {
+      id: crypto.randomUUID(), post_id: postId, visitor_id: visitor, author: nickname, content,
+      status: isAdmin ? 'approved' : 'pending', created_at: new Date().toISOString(),
+    };
+    rows(await db.from('comments').insert(record).select('id').limit(1));
+    return Response.json({ ok: true, id: record.id, status: record.status }, { status: 201 });
   }
 
   async function listComments(postId) {
     if (!uuid(postId)) fail('invalid_input', 400);
     const comments = rows(await db.from('comments').select('id,author,content,created_at')
-      .eq('post_id', postId).order('created_at', { ascending: true }).limit(200));
+      .eq('post_id', postId).eq('status', 'approved').order('created_at', { ascending: true }).limit(200));
     return Response.json({ comments });
+  }
+
+  async function pendingQueue() {
+    const [posts, comments] = await Promise.all([
+      db.from('posts').select('id,content,author,rank,category,created_at')
+        .eq('status', 'pending').order('created_at', { ascending: true }).limit(100),
+      db.from('comments').select('id,content,author,post_id,created_at')
+        .eq('status', 'pending').order('created_at', { ascending: true }).limit(100),
+    ]);
+    const pendingPosts = rows(posts);
+    const pendingComments = rows(comments);
+    const postIds = [...new Set(pendingComments.map(comment => comment.post_id))];
+    let contexts = [];
+    if (postIds.length) {
+      contexts = rows(await db.from('posts').select('id,author,content').in('id', postIds).limit(200));
+    }
+    const context = new Map(contexts.map(post => [post.id, post]));
+    return Response.json({
+      posts: pendingPosts,
+      comments: pendingComments.map(comment => {
+        const post = context.get(comment.post_id);
+        return {
+          ...comment,
+          post_author: post?.author || '',
+          post_excerpt: (post?.content || '').slice(0, 90),
+        };
+      }),
+    });
+  }
+
+  async function moderate(input, request) {
+    requireAdmin(request);
+    const table = input.kind === 'post' ? 'posts' : input.kind === 'comment' ? 'comments' : null;
+    if (!table) fail('invalid_input', 400);
+    const id = text(input.id, { min: 36, max: 36 });
+    if (!uuid(id)) fail('invalid_input', 400);
+
+    if (input.op === 'approve') {
+      const reviewed = rows(await db.from(table).update({ status: 'approved' })
+        .eq('id', id).eq('status', 'pending').select('id').limit(1));
+      if (!reviewed.length) fail('not_found', 404);
+      return Response.json({ ok: true, status: 'approved' });
+    }
+    if (input.op === 'reject') {
+      const removed = rows(await db.from(table).delete().eq('id', id).eq('status', 'pending').select('id').limit(1));
+      if (!removed.length) fail('not_found', 404);
+      if (table === 'posts') {
+        await Promise.all([
+          db.from('comments').delete().eq('post_id', id).select('id').limit(500),
+          db.from('likes').delete().eq('post_id', id).select('id').limit(500),
+        ]);
+      }
+      return Response.json({ ok: true, removed: true });
+    }
+    fail('invalid_input', 400);
   }
 
   async function listTeams() {
@@ -273,9 +351,10 @@ export function application({ db, BackendError, env }) {
   }
 
   async function stats() {
+    const published = [['status', 'approved']];
     const [posts, teams, comments, authors] = await Promise.all([
-      countRows('posts'), countRows('teams'), countRows('comments'),
-      db.from('posts').select('visitor_id').limit(500),
+      countRows('posts', published), countRows('teams'), countRows('comments', published),
+      db.from('posts').select('visitor_id').eq('status', 'approved').limit(500),
     ]);
     const unique = new Set(rows(authors).map(row => row.visitor_id));
     return Response.json({ posts, teams, comments, authors: unique.size });
@@ -289,7 +368,8 @@ export function application({ db, BackendError, env }) {
     return Response.json({ is_admin: true });
   }
 
-  const MUTATIONS = new Set(['/api/posts', '/api/teams', '/api/join']);
+  // Squad records stay admin-only; visitor-submitted text goes through the queue.
+  const ADMIN_ONLY = new Set(['/api/teams', '/api/join']);
 
   return async ctx => {
     const request = ctx.request;
@@ -308,6 +388,7 @@ export function application({ db, BackendError, env }) {
       if (path === '/api/teams') return listTeams();
       if (path === '/api/stats') return stats();
       if (path === '/api/comments') return listComments(params.get('post_id') || '');
+      if (path === '/api/moderation') { requireAdmin(request); return pendingQueue(); }
       if (path === '/api/posts') return loadPage(params, visitorOf(ctx, params.get('visitor_id')));
       fail('not_found', 404);
     }
@@ -315,13 +396,15 @@ export function application({ db, BackendError, env }) {
     if (method === 'POST') {
       const input = await body(request);
       if (path === '/api/admin/check') return adminCheck(request, input);
-      // Visitors read; only the admin key can change anything.
-      if (MUTATIONS.has(path)) requireAdmin(request);
+      if (path === '/api/moderation') return moderate(input, request);
+      if (ADMIN_ONLY.has(path)) requireAdmin(request);
       if (path === '/api/posts') {
         const visitor = visitorOf(ctx, input.visitor_id);
-        if (input.op === 'create') return createPost(input, visitor);
+        // A valid admin key publishes straight away; anything else waits for review.
+        const isAdmin = isAdminRequest(request);
+        if (input.op === 'create') return createPost(input, visitor, isAdmin);
         if (input.op === 'like') return toggleLike(input, visitor);
-        if (input.op === 'comment') return addComment(input, visitor);
+        if (input.op === 'comment') return addComment(input, visitor, isAdmin);
         fail('invalid_input', 400);
       }
       if (path === '/api/teams') {
