@@ -97,10 +97,7 @@ function assertCooldown(table) {
   localStorage.setItem(key, String(Date.now()));
 }
 
-async function publishedOnly(table) {
-  const db = await client();
-  return db.from(table).eq('status', 'approved');
-}
+const publishedOnly = (db, table) => db.from(table).eq('status', 'approved');
 
 export async function signInAsAdmin(email, password) {
   const db = await client();
@@ -132,7 +129,7 @@ export const api = {
     const size = Math.min(50, Math.max(1, Number(limit) || 20));
     const from = Math.max(0, Number(offset) || 0);
     let query = db.from('posts')
-      .select('id,visitor_id,author,rank,category,content,status,created_at,comments(count)')
+      .select('id,visitor_id,author,rank,category,content,status,created_at')
       .order('created_at', { ascending: false });
     // An anonymous reader never sees unapproved rows — including their own, which the
     // database hides. The author_only view is therefore "my published posts".
@@ -140,13 +137,22 @@ export const api = {
     const result = await run(query.range(from, from + size - 1));
     const rows = result.data || [];
     const ids = rows.map(row => row.id);
-    const counts = new Map();
+    const likeCounts = new Map();
+    const commentCounts = new Map();
     const liked = new Set();
     if (ids.length) {
-      const likes = await run(db.from('likes').select('post_id,visitor_id').in('post_id', ids).limit(5000));
+      // Counted here rather than embedded in the post query, so the feed does not
+      // depend on PostgREST relationship inference to render at all.
+      const [likes, comments] = await Promise.all([
+        run(db.from('likes').select('post_id,visitor_id').in('post_id', ids).limit(5000)),
+        run(publishedOnly(db, 'comments').select('post_id').in('post_id', ids).limit(5000)),
+      ]);
       (likes.data || []).forEach(like => {
-        counts.set(like.post_id, (counts.get(like.post_id) || 0) + 1);
+        likeCounts.set(like.post_id, (likeCounts.get(like.post_id) || 0) + 1);
         if (like.visitor_id === visitor) liked.add(like.post_id);
+      });
+      (comments.data || []).forEach(comment => {
+        commentCounts.set(comment.post_id, (commentCounts.get(comment.post_id) || 0) + 1);
       });
     }
     return {
@@ -158,8 +164,8 @@ export const api = {
         content: row.content,
         status: row.status,
         created_at: row.created_at,
-        comments: row.comments?.[0]?.count ?? 0,
-        likes: counts.get(row.id) || 0,
+        comments: commentCounts.get(row.id) || 0,
+        likes: likeCounts.get(row.id) || 0,
         liked_by_me: liked.has(row.id),
       })),
       hasMore: rows.length === size,
@@ -173,7 +179,7 @@ export const api = {
     const mine = await run(db.from('likes').select('id').eq('post_id', postId).eq('visitor_id', visitor).limit(1));
     const existing = mine.data?.[0];
     if (existing) {
-      await run(db.from('likes').delete().eq('id', existing.id));
+      await run(db.from('likes').delete().eq('id', existing.id).eq('visitor_id', visitor));
     } else {
       try {
         await run(db.from('likes').insert({ post_id: postId, visitor_id: visitor }).select('id'));
@@ -188,7 +194,7 @@ export const api = {
 
   comments: async (postId) => {
     const db = await client();
-    const result = await run(publishedOnly('comments')
+    const result = await run(publishedOnly(db, 'comments')
       .eq('post_id', postId)
       .select('id,author,content,created_at')
       .order('created_at')
@@ -242,14 +248,24 @@ export const api = {
   async teams() {
     const db = await client();
     const result = await run(db.from('teams')
-      .select('*, join_requests(id,visitor_id,nickname)')
+      .select('id,name,logo,description,game_mode,region,required_rank,status,leader,slot_count,created_at')
       .order('created_at', { ascending: false })
       .limit(100));
-    return (result.data || []).map(team => {
-      const applicants = (team.join_requests || []).map(entry => ({ name: entry.nickname, role: 'Applicant' }));
-      delete team.join_requests;
-      team.roster = [{ name: team.leader, role: 'Founder' }, ...applicants];
-      team.members = team.roster.length;
+    const teams = result.data || [];
+    const ids = teams.map(team => team.id);
+    let applicants = [];
+    if (ids.length) {
+      const found = await run(db.from('join_requests')
+        .select('team_id,nickname,created_at').in('team_id', ids).order('created_at').limit(2000));
+      applicants = found.data || [];
+    }
+    return teams.map(team => {
+      const roster = [{ name: team.leader, role: 'Founder' }];
+      applicants
+        .filter(entry => entry.team_id === team.id)
+        .forEach(entry => roster.push({ name: entry.nickname, role: 'Applicant' }));
+      team.roster = roster;
+      team.members = roster.length;
       return team;
     });
   },

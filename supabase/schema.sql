@@ -93,6 +93,7 @@ drop policy if exists "comments admin review" on public.comments;
 drop policy if exists "comments admin delete" on public.comments;
 drop policy if exists "likes readable" on public.likes;
 drop policy if exists "likes on published" on public.likes;
+drop policy if exists "likes undoable" on public.likes;
 drop policy if exists "likes admin" on public.likes;
 drop policy if exists "teams readable" on public.teams;
 drop policy if exists "teams admin write" on public.teams;
@@ -129,6 +130,9 @@ create policy "likes on published" on public.likes
   for insert to anon with check (
     exists (select 1 from public.posts p where p.id = post_id and p.status = 'approved')
   );
+-- An anonymous visitor must be able to take their like back. A visitor has no server-side
+-- identity (it is a device-local uuid), so this delete rule cannot be narrower than 'any'.
+create policy "likes undoable" on public.likes for delete to anon using (true);
 create policy "likes admin" on public.likes for all to authenticated using (true) with check (true);
 
 -- Squads are published by the admin only.

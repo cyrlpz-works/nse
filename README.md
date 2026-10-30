@@ -80,6 +80,10 @@ Known limits of this design, stated plainly:
   admin user in Supabase instead of sharing it.
 - Likes are counted from the like rows, so a visitor who clears their browser storage can like
   a post again — identity is a device-local UUID, not an account.
+- Because that UUID is chosen by the browser, the database cannot tell whose like is whose, so
+  the "undo your like" policy is deliberately `using (true)` for `anon`. Someone determined
+  enough could clear other visitors' likes on a post; nothing published depends on like counts,
+  and the feed itself cannot be altered this way. Tightening it means real visitor accounts.
 
 ## Ranked ladder
 
