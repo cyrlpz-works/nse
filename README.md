@@ -13,7 +13,8 @@ hosted Postgres schema). The same source lives in this repository.
 dist/          published website (index.html, styles.css, app.js, api.js)
 functions/     Edge Function: index.ts entry + routes.mjs business logic
 schema.sql     reviewed migration for the app.* tables (reference copy)
-index.html     the original single-file page, kept for reference only
+index.html     redirect stub so GitHub Pages opens the app in dist/
+legacy/        the original single-file page, kept for reference
 dev/           local-only helpers; never published
 ```
 
