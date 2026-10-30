@@ -8,8 +8,15 @@ const QUERY_TIMEOUT_MS = 12000;
 const MAX_POST = 1200;
 const SUBMIT_COOLDOWN_MS = 60000;
 
+// Shape checks, not guesses about your project: a Supabase host label is lowercase and the
+// anon key is a three-part JWT. Left as a sample -- YOUR-REF, 'eyJ...' -- the site reports
+// "not connected" instead of silently failing every request against a domain that does not
+// exist, which reads like a broken database.
+const URL_SHAPE = /^https:\/\/[a-z0-9][a-z0-9-]{4,62}\.supabase\.co\/?$/;
+const KEY_SHAPE = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
+
 export function isConfigured() {
-  return /^https?:\/\/.{6,}/.test(SUPABASE_URL) && String(SUPABASE_ANON_KEY).length > 20;
+  return URL_SHAPE.test(String(SUPABASE_URL).trim()) && KEY_SHAPE.test(String(SUPABASE_ANON_KEY).trim());
 }
 
 function uid() {
