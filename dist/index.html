@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JAS TRIAS · CODM Community</title>
+<meta name="description" content="Community hub for Call of Duty Mobile squads in the Philippines — share loadouts, recruit teammates and track rising players.">
+<meta name="theme-color" content="#08080b">
+<meta property="og:title" content="JAS TRIAS · CODM Community">
+<meta property="og:description" content="Share loadouts, recruit teammates and climb with your squad.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff2d78'/%3E%3Cpath d='M20 8v11a4 4 0 0 1-8 0' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="sr-only" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="shell header-inner">
+    <button class="brand" type="button" data-nav="home" aria-label="JAS TRIAS CODM Community — go to home">
+      <span class="brand-mark" aria-hidden="true">JT</span>
+      <span class="brand-text">
+        <strong>Jas Trias</strong>
+        <span>CODM Community</span>
+      </span>
+    </button>
+
+    <nav class="nav" aria-label="Primary">
+      <button class="nav-link" type="button" data-nav="home">Home</button>
+      <button class="nav-link" type="button" data-nav="community">Community</button>
+      <button class="nav-link" type="button" data-nav="teams">Teams</button>
+      <button class="nav-link" type="button" data-nav="profile">Profile</button>
+    </nav>
+
+    <div class="header-tools">
+      <button class="btn btn-ghost btn-sm" type="button" id="adminButton" aria-haspopup="dialog">Admin mode</button>
+      <div class="header-user" id="headerUser">
+        <span class="avatar accent" id="headerInitial" aria-hidden="true">?</span>
+        <span class="header-user-meta">
+          <b id="headerName">Guest</b>
+          <small id="headerRank">Set your rank</small>
+        </span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="shell">
+  <p class="notice" id="modeNotice" hidden></p>
+
+  <!-- ============ HOME ============ -->
+  <section class="view" id="view-home" aria-labelledby="home-title">
+    <div class="hero">
+      <p class="hero-eyebrow"><span aria-hidden="true">◆</span> Season 2026 · Philippines</p>
+      <h1 id="home-title">Squad up. <em>Dominate</em> the lobby.</h1>
+      <p>Post loadouts, find five-stack teammates and track the players climbing hardest this season — all in one community feed.</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" type="button" data-nav="community">Open the feed</button>
+        <button class="btn btn-ghost" type="button" data-nav="teams">Browse teams</button>
+      </div>
+    </div>
+
+    <div class="stats" id="homeStats" aria-live="polite"></div>
+
+    <div class="split">
+      <div class="stack">
+        <div class="section-head">
+          <h2>Recruiting now</h2>
+          <small id="recruitingCount"></small>
+        </div>
+        <div class="team-grid" id="homeTeams"></div>
+      </div>
+
+      <div class="stack">
+        <div class="section-head">
+          <h2>Top post writers</h2>
+          <small>by likes</small>
+        </div>
+        <div class="card" id="homeLeaders" style="padding:0.6rem"></div>
+
+        <div class="section-head" style="margin-top:2rem">
+          <h2>Latest from the feed</h2>
+        </div>
+        <div id="homeFeed"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COMMUNITY ============ -->
+  <section class="view" id="view-community" aria-labelledby="community-title">
+    <div class="section-head">
+      <h2 id="community-title">Community feed</h2>
+      <small id="feedCount"></small>
+    </div>
+
+    <form class="card composer" id="postForm">
+      <div class="composer-row">
+        <span class="avatar accent" id="composerAvatar" aria-hidden="true">?</span>
+        <label class="sr-only" for="postText">Your post</label>
+        <textarea class="textarea" id="postText" maxlength="1200" rows="3"
+          placeholder="Share a clip, a loadout, or who you're queuing for…" required></textarea>
+      </div>
+      <p class="char-left" id="charLeft" aria-live="polite"></p>
+
+      <div class="chips" id="categoryChips" role="group" aria-label="Post category"></div>
+      <button class="btn btn-primary btn-block" type="submit" id="postSubmit">Publish post</button>
+    </form>
+
+    <div class="toolbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg>
+        <input class="input" type="search" id="feedSearch" placeholder="Search posts or players…" aria-label="Search the feed">
+      </div>
+      <label class="sr-only" for="feedSort">Sort feed</label>
+      <select class="input select" id="feedSort" style="width:auto">
+        <option value="new">Newest first</option>
+        <option value="top">Most liked</option>
+      </select>
+    </div>
+
+    <div id="feedList" aria-live="polite"></div>
+    <button class="btn btn-ghost btn-block" type="button" id="loadMore" hidden>Load older posts</button>
+  </section>
+
+  <!-- ============ TEAMS ============ -->
+  <section class="view" id="view-teams" aria-labelledby="teams-title">
+    <div class="section-head">
+      <h2 id="teams-title">Teams &amp; squads</h2>
+      <small id="teamsCount"></small>
+    </div>
+
+    <div class="toolbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg>
+        <input class="input" type="search" id="teamSearch" placeholder="Search by name, mode or region…" aria-label="Search teams">
+      </div>
+      <label class="sr-only" for="teamModeFilter">Filter by mode</label>
+      <select class="input select" id="teamModeFilter" style="width:auto">
+        <option value="">All modes</option>
+      </select>
+      <button class="btn btn-primary" type="button" id="openCreateTeam">+ Create team</button>
+    </div>
+
+    <div class="team-grid" id="teamGrid"></div>
+  </section>
+
+  <!-- ============ TEAM DETAIL ============ -->
+  <section class="view" id="view-team" aria-labelledby="teamDetailName">
+    <button class="btn btn-ghost btn-sm" type="button" data-nav="teams" style="margin-bottom:1.1rem">← All teams</button>
+    <div class="panel" id="teamDetail"></div>
+  </section>
+
+  <!-- ============ PROFILE ============ -->
+  <section class="view" id="view-profile" aria-labelledby="profile-title">
+    <h2 class="sr-only" id="profile-title">Your profile</h2>
+    <div class="panel" id="profilePanel"></div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="shell footer-inner">
+    <b>Jas Trias · CODM Community</b>
+    <span>Community-built hub · Philippines · <span id="footerYear">2026</span></span>
+  </div>
+</footer>
+
+<!-- ============ CREATE TEAM DIALOG ============ -->
+<dialog id="createTeamDialog">
+  <form method="dialog" id="createTeamForm">
+    <div class="dialog-head">
+      <h2>Create a team</h2>
+      <button class="close-btn" type="button" data-close-dialog aria-label="Close">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="field">
+        <label for="teamName">Team name</label>
+        <input class="input" id="teamName" maxlength="40" required placeholder="e.g. NSE Yuri">
+      </div>
+      <div class="field">
+        <label for="teamTag">Logo letter or emoji</label>
+        <input class="input" id="teamTag" maxlength="4" required placeholder="YR">
+      </div>
+      <div class="field">
+        <label for="teamMode">Game mode</label>
+        <select class="input select" id="teamMode">
+          <option>Multiplayer</option>
+          <option>Battle Royale</option>
+          <option>Zombies</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="teamRegion">Region</label>
+        <input class="input" id="teamRegion" maxlength="40" value="Philippines">
+      </div>
+      <div class="field">
+        <label for="teamRank">Minimum rank tier</label>
+        <select class="input select" id="teamRank">
+          <option>Unranked</option><option>Rookie</option><option>Veteran</option><option>Elite</option><option>Pro</option>
+          <option selected>Master</option><option>Grand Master</option><option>Legendary</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="teamDesc">About the team</label>
+        <textarea class="textarea" id="teamDesc" maxlength="300" placeholder="Play style, schedule, what you look for…"></textarea>
+      </div>
+      <div class="field">
+        <label for="teamSlots">Roster size</label>
+        <input class="input" id="teamSlots" type="number" min="1" max="12" value="5">
+      </div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-ghost" type="button" data-close-dialog>Cancel</button>
+      <button class="btn btn-primary" type="submit">Publish team</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ ADMIN MODE DIALOG ============ -->
+<dialog id="adminDialog">
+  <form id="adminForm">
+    <div class="dialog-head">
+      <h2>Admin mode</h2>
+      <button class="close-btn" type="button" data-close-admin aria-label="Close">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="field">
+        <label for="adminKey">Admin key</label>
+        <input class="input" id="adminKey" type="password" autocomplete="off" maxlength="200"
+          placeholder="the key set in site settings">
+        <p class="field-hint">Only the admin key can publish posts, comments, squads and join requests. Visitors read the site.</p>
+      </div>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-ghost" type="button" data-close-admin>Cancel</button>
+      <button class="btn btn-primary" type="submit" id="adminSubmit">Unlock editing</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>
+<script src="/api.js" type="module"></script>
+<script src="/app.js" type="module"></script>
+</body>
+</html>
