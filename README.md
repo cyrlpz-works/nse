@@ -1,4 +1,4 @@
-# JAS TRIAS · CODM Community
+# TRIAS · CODM Community
 
 Community hub for a Call of Duty Mobile squad community: a post feed with likes and
 comments, team/squad pages with join requests, and a device-local player profile.
