@@ -108,7 +108,9 @@ function assertCooldown(table) {
   localStorage.setItem(key, String(Date.now()));
 }
 
-const publishedOnly = (db, table) => db.from(table).eq('status', 'approved');
+// supabase-js only allows filters after a select, so this wraps an already-selected query
+// rather than a table name.
+const approved = (query) => query.eq('status', 'approved');
 
 export async function signInAsAdmin(email, password) {
   const db = await client();
@@ -156,7 +158,7 @@ export const api = {
       // depend on PostgREST relationship inference to render at all.
       const [likes, comments] = await Promise.all([
         run(db.from('likes').select('post_id,visitor_id').in('post_id', ids).limit(5000)),
-        run(publishedOnly(db, 'comments').select('post_id').in('post_id', ids).limit(5000)),
+        run(approved(db.from('comments').select('post_id')).in('post_id', ids).limit(5000)),
       ]);
       (likes.data || []).forEach(like => {
         likeCounts.set(like.post_id, (likeCounts.get(like.post_id) || 0) + 1);
@@ -205,9 +207,8 @@ export const api = {
 
   comments: async (postId) => {
     const db = await client();
-    const result = await run(publishedOnly(db, 'comments')
+    const result = await run(approved(db.from('comments').select('id,author,content,created_at'))
       .eq('post_id', postId)
-      .select('id,author,content,created_at')
       .order('created_at')
       .limit(100));
     return result.data || [];
