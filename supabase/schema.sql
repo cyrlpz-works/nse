@@ -80,6 +80,25 @@ alter table public.likes enable row level security;
 alter table public.teams enable row level security;
 alter table public.join_requests enable row level security;
 
+-- Each policy is dropped first so re-running this file repairs rather than fails.
+drop policy if exists "posts readable" on public.posts;
+drop policy if exists "posts queue" on public.posts;
+drop policy if exists "posts admin write" on public.posts;
+drop policy if exists "posts admin review" on public.posts;
+drop policy if exists "posts admin delete" on public.posts;
+drop policy if exists "comments readable" on public.comments;
+drop policy if exists "comments queue" on public.comments;
+drop policy if exists "comments admin write" on public.comments;
+drop policy if exists "comments admin review" on public.comments;
+drop policy if exists "comments admin delete" on public.comments;
+drop policy if exists "likes readable" on public.likes;
+drop policy if exists "likes on published" on public.likes;
+drop policy if exists "likes admin" on public.likes;
+drop policy if exists "teams readable" on public.teams;
+drop policy if exists "teams admin write" on public.teams;
+drop policy if exists "joins readable" on public.join_requests;
+drop policy if exists "joins admin write" on public.join_requests;
+
 -- Visitors read published content only; a signed-in admin also reads the queue.
 create policy "posts readable" on public.posts
   for select using (status = 'approved' or auth.role() = 'authenticated');
