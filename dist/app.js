@@ -1,4 +1,4 @@
-import { api, getVisitorId, getAdminKey, setAdminKey } from './api.js';
+import { api, getVisitorId, isConfigured, signInAsAdmin, signOutAsAdmin, hasAdminSession } from './api.js';
 
 const CATEGORIES = ['General', 'Multiplayer', 'Battle Royale', 'Ranked', 'Loadouts', 'Tips & Guides', 'Looking for Team', 'Team Recruitment'];
 
@@ -103,18 +103,15 @@ const ERRORS = {
   invalid_input: 'Please check the highlighted fields.',
   missing_nickname: 'Set your nickname on the Profile page first.',
   post_too_long: 'That post is too long (max 1200 characters).',
-  payload_too_large: 'That post is too long (max 1200 characters).',
   too_short: 'Wait a minute before sending another one.',
   not_found: 'That entry no longer exists.',
-  team_full: 'That squad already has a full roster.',
-  admin_required: 'That admin key is not correct.',
-  admin_key_missing: 'Admin mode is not configured on this site yet.',
-  too_many_attempts: 'Too many attempts — wait a few minutes and try again.',
-  network_error: 'Cannot reach the community server.',
+  duplicate_name: 'A squad with that name already exists.',
+  admin_required: 'Sign in as the site admin to do that.',
+  auth_failed: 'That email or password is not correct.',
+  backend_missing: 'This site is not connected to its database yet.',
+  database_unavailable: 'The database refused that request.',
+  network_error: 'Cannot reach the community database. Check your connection.',
   timeout: 'The server took too long. Try again.',
-  bad_response: 'The server returned an unexpected reply.',
-  http_404: 'This host does not run the community service, so posts and squads cannot load.',
-  http_503: 'The community service is temporarily unavailable.',
 };
 const explain = (error) => ERRORS[error?.message] || 'Something went wrong. Please try again.';
 
@@ -174,18 +171,20 @@ function paintHeader() {
 function paintAdminUi() {
   const button = $('adminButton');
   const submitLabel = state.isAdmin ? 'Publish post' : 'Send for approval';
-  button.textContent = state.isAdmin ? 'Admin mode: on' : 'Admin mode';
+  button.textContent = state.isAdmin ? 'Signed in as admin' : 'Admin sign in';
   button.classList.toggle('is-on', state.isAdmin);
   button.setAttribute('aria-label', state.isAdmin
-    ? 'Admin mode is on. Click to sign out of admin mode'
-    : 'Open admin mode to publish content');
+    ? 'Signed in as the site admin. Click to sign out'
+    : 'Sign in as the site admin to publish content');
   $('postForm').hidden = state.offline;
   $('postSubmit').textContent = submitLabel;
   $('openCreateTeam').hidden = state.offline || !state.isAdmin;
   const notice = $('modeNotice');
   notice.hidden = state.isAdmin && !state.offline;
   notice.textContent = state.offline
-    ? 'This host serves the pages only — no community service runs here, so the feed and squads stay empty and nothing can be published. The live site needs its backend.'
+    ? (isConfigured()
+      ? 'The community database could not be reached, so the feed and squads stay empty and nothing can be published.'
+      : 'This site is not connected to its database yet, so the feed and squads stay empty. Add the project URL and anon key in dist/config.js.')
     : 'Anyone can post, but the site admin approves every post and comment before it appears in the feed. Squads are published by the admin. Your profile stays on this device.';
   renderModeration();
 }
@@ -288,9 +287,9 @@ function skeletonBlock(count) {
 }
 
 /* ---------------- home ---------------- */
-const squadsEmptyCopy = () => (state.offline
-  ? 'No squads yet — this host does not run the community service.'
-  : state.isAdmin ? 'No squads yet — create the first one.' : 'No squads published yet.');
+const squadsEmptyCopy = () => (state.isAdmin
+  ? 'No squads yet — create the first one.'
+  : 'No squads published yet.');
 
 function renderHome() {
   const stats = state.stats || { posts: state.posts.length, teams: state.teams.length, members: 0, comments: 0 };
@@ -369,7 +368,7 @@ function renderFeed() {
   if (!list.length) {
     host.appendChild(emptyBlock(state.posts.length
       ? 'No posts match that search.'
-      : state.offline ? 'No posts yet — this host does not run the community service.' : 'The feed is empty. Start the first conversation.'));
+      : 'The feed is empty. Start the first conversation.'));
   } else {
     list.forEach(post => host.appendChild(postNode(post)));
   }
@@ -804,7 +803,7 @@ async function createTeam(form) {
     leader: profileName(),
   };
   try {
-    await api.createTeam({ ...data, nickname: profileName() });
+    await api.createTeam(data);
     await loadTeams();
     $('createTeamDialog').close();
     form.reset();
@@ -907,32 +906,33 @@ function bindEvents() {
   $('headerUser').addEventListener('click', () => navigate('profile'));
   $('headerUser').style.cursor = 'pointer';
 
-  $('adminButton').addEventListener('click', () => {
-    if (state.isAdmin) { signOutAdmin(); return; }
-    $('adminKey').value = '';
+  $('adminButton').addEventListener('click', async () => {
+    if (state.isAdmin) { await signOutAdmin(); return; }
+    $('adminEmail').value = '';
+    $('adminPassword').value = '';
     $('adminDialog').showModal();
-    $('adminKey').focus();
+    $('adminEmail').focus();
   });
   $('adminForm').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const key = $('adminKey').value.trim();
-    if (!key) { toast('Enter the admin key first.', true); return; }
+    const email = $('adminEmail').value.trim();
+    const password = $('adminPassword').value;
+    if (!email || !password) { toast('Enter the admin email and password.', true); return; }
     const button = $('adminSubmit');
     button.disabled = true;
-    button.textContent = 'Checking…';
+    button.textContent = 'Signing in…';
     try {
-      await api.adminCheck(key);
-      setAdminKey(key);
+      await signInAsAdmin(email, password);
       state.isAdmin = true;
       $('adminDialog').close();
       paintAdminUi();
-      paintRoute();
-      toast('Admin mode on — you can publish now.');
+      await refreshAll();
+      toast('Signed in — you can publish now.');
     } catch (error) {
       toast(explain(error), true);
     } finally {
       button.disabled = false;
-      button.textContent = 'Unlock editing';
+      button.textContent = 'Sign in';
     }
   });
   document.querySelectorAll('[data-close-admin]').forEach(node =>
@@ -941,18 +941,18 @@ function bindEvents() {
   window.addEventListener('hashchange', paintRoute);
 }
 
-function signOutAdmin() {
-  setAdminKey('');
+async function signOutAdmin() {
+  await signOutAsAdmin();
   state.isAdmin = false;
   paintAdminUi();
-  paintRoute();
-  toast('Admin mode off — the site is read-only again.');
+  await refreshAll();
+  toast('Signed out — the site is read-only again.');
 }
 
 /* ---------------- boot ---------------- */
 async function boot() {
   $('footerYear').textContent = String(new Date().getFullYear());
-  state.isAdmin = Boolean(getAdminKey());
+  state.isAdmin = await hasAdminSession();
   paintHeader();
   updateCharCount();
   bindEvents();

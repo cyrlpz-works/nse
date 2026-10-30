@@ -36,7 +36,7 @@
     </nav>
 
     <div class="header-tools">
-      <button class="btn btn-ghost btn-sm" type="button" id="adminButton" aria-haspopup="dialog">Admin mode</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="adminButton" aria-haspopup="dialog">Admin sign in</button>
       <div class="header-user" id="headerUser">
         <span class="avatar accent" id="headerInitial" aria-hidden="true">?</span>
         <span class="header-user-meta">
@@ -226,24 +226,29 @@
   </form>
 </dialog>
 
-<!-- ============ ADMIN MODE DIALOG ============ -->
+<!-- ============ ADMIN SIGN IN DIALOG ============ -->
 <dialog id="adminDialog">
   <form id="adminForm">
     <div class="dialog-head">
-      <h2>Admin mode</h2>
+      <h2>Admin sign in</h2>
       <button class="close-btn" type="button" data-close-admin aria-label="Close">✕</button>
     </div>
     <div class="dialog-body">
       <div class="field">
-        <label for="adminKey">Admin key</label>
-        <input class="input" id="adminKey" type="password" autocomplete="off" maxlength="200"
-          placeholder="the key set in site settings">
-        <p class="field-hint">Only the admin key can publish posts, comments, squads and join requests. Visitors read the site.</p>
+        <label for="adminEmail">Admin email</label>
+        <input class="input" id="adminEmail" type="email" autocomplete="username" maxlength="100"
+          placeholder="the address in Supabase Authentication">
+      </div>
+      <div class="field">
+        <label for="adminPassword">Password</label>
+        <input class="input" id="adminPassword" type="password" autocomplete="current-password" maxlength="200"
+          placeholder="your admin password">
+        <p class="field-hint">Signing in lets you approve posts, publish squads and add join requests. Only the account you created in Supabase can do this.</p>
       </div>
     </div>
     <div class="dialog-foot">
       <button class="btn btn-ghost" type="button" data-close-admin>Cancel</button>
-      <button class="btn btn-primary" type="submit" id="adminSubmit">Unlock editing</button>
+      <button class="btn btn-primary" type="submit" id="adminSubmit">Sign in</button>
     </div>
   </form>
 </dialog>
