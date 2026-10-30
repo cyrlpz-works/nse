@@ -93,8 +93,10 @@ duplicate squad-name rejection, and idempotent join requests with slot-capacity 
 
 Publication is handled by Qoder Sites (`prepare_site` → migration → `publish_site`) rather
 than a hand-run build. `dist/` is the `webDirectory` and `functions/` the `functionDirectory`.
-GitHub Pages cannot run the Edge Function, so a Pages deployment of `dist/` alone would show
-the design but have no shared data.
+GitHub Pages cannot run the Edge Function. `dist/` is Pages-safe — the asset links are relative,
+so it renders correctly under a `/repo-name/` subpath — and the app detects the missing service on
+first load: it shows the design with read-only empty states and a notice instead of error toasts.
+Pages is a look-and-no-data preview; the shared feed needs the backend below.
 
 One-time cloud setup, in order: enable the database + Functions backend for the site, apply
 `schema.sql` as a reviewed migration, prepare the site with `databaseAccess: read_write`,

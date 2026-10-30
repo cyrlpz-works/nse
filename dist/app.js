@@ -112,6 +112,7 @@ const ERRORS = {
   network_error: 'Cannot reach the community server.',
   timeout: 'The server took too long. Try again.',
   bad_response: 'The server returned an unexpected reply.',
+  http_404: 'This host does not run the community service, so posts and squads cannot load.',
   http_503: 'The community service is temporarily unavailable.',
 };
 const explain = (error) => ERRORS[error?.message] || 'Something went wrong. Please try again.';
@@ -176,11 +177,14 @@ function paintAdminUi() {
   button.setAttribute('aria-label', state.isAdmin
     ? 'Admin mode is on. Click to sign out of admin mode'
     : 'Open admin mode to publish content');
-  $('postForm').hidden = !state.isAdmin;
-  $('openCreateTeam').hidden = !state.isAdmin;
+  const writingDisabled = state.offline || !state.isAdmin;
+  $('postForm').hidden = writingDisabled;
+  $('openCreateTeam').hidden = writingDisabled;
   const notice = $('modeNotice');
-  notice.hidden = state.isAdmin;
-  notice.textContent = 'Read-only community — the site admin publishes posts, comments, squads and join requests. Your profile stays on this device.';
+  notice.hidden = !writingDisabled;
+  notice.textContent = state.offline
+    ? 'This host serves the pages only — no community service runs here, so the feed and squads stay empty and nothing can be published. The live site needs its backend.'
+    : 'Read-only community — the site admin publishes posts, comments, squads and join requests. Your profile stays on this device.';
 }
 
 /* ---------------- shared renderers ---------------- */
@@ -279,6 +283,10 @@ function skeletonBlock(count) {
 }
 
 /* ---------------- home ---------------- */
+const squadsEmptyCopy = () => (state.offline
+  ? 'No squads yet — this host does not run the community service.'
+  : state.isAdmin ? 'No squads yet — create the first one.' : 'No squads published yet.');
+
 function renderHome() {
   const stats = state.stats || { posts: state.posts.length, teams: state.teams.length, members: 0, comments: 0 };
   $('homeStats').innerHTML = [
@@ -295,7 +303,7 @@ function renderHome() {
   const teamsHost = $('homeTeams');
   teamsHost.replaceChildren();
   const featured = (recruiting.length ? recruiting : state.teams).slice(0, 3);
-  if (!featured.length) teamsHost.appendChild(emptyBlock(state.isAdmin ? 'No squads yet — create the first one.' : 'No squads published yet.'));
+  if (!featured.length) teamsHost.appendChild(emptyBlock(squadsEmptyCopy()));
   featured.forEach(team => teamsHost.appendChild(teamCard(team)));
 
   const leaders = topWriters(state.posts);
@@ -316,7 +324,7 @@ function renderHome() {
   const feedHost = $('homeFeed');
   feedHost.replaceChildren();
   const latest = state.posts.slice(0, 3);
-  if (!latest.length) { feedHost.appendChild(emptyBlock(state.isAdmin ? 'The feed is empty. Post the first one.' : 'No posts yet.')); return; }
+  if (!latest.length) { feedHost.appendChild(emptyBlock(state.offline || !state.isAdmin ? 'No posts yet.' : 'The feed is empty. Post the first one.')); return; }
   latest.forEach(post => feedHost.appendChild(postNode(post)));
 }
 
@@ -354,7 +362,9 @@ function renderFeed() {
   const host = $('feedList');
   host.replaceChildren();
   if (!list.length) {
-    host.appendChild(emptyBlock(state.posts.length ? 'No posts match that search.' : 'The feed is empty. Start the first conversation.'));
+    host.appendChild(emptyBlock(state.posts.length
+      ? 'No posts match that search.'
+      : state.offline ? 'No posts yet — this host does not run the community service.' : 'The feed is empty. Start the first conversation.'));
   } else {
     list.forEach(post => host.appendChild(postNode(post)));
   }
@@ -401,7 +411,7 @@ function renderTeamGrid() {
   $('teamsCount').textContent = `${list.length} of ${state.teams.length} squads`;
   const host = $('teamGrid');
   host.replaceChildren();
-  if (!list.length) host.appendChild(emptyBlock('No squad matches that search.'));
+  if (!list.length) host.appendChild(emptyBlock(state.teams.length ? 'No squad matches that search.' : squadsEmptyCopy()));
   else list.forEach(team => host.appendChild(teamCard(team)));
 }
 
@@ -592,7 +602,7 @@ function openProfileEditor() {
 /* ---------------- data loading ---------------- */
 async function loadTeams() {
   try { state.teams = await api.teams(); }
-  catch { state.teams = []; toast('Squads could not be loaded.', true); }
+  catch { state.teams = []; if (!state.offline) toast('Squads could not be loaded.', true); }
 }
 
 async function loadPosts({ reset = true } = {}) {
@@ -612,7 +622,7 @@ async function loadStats() {
 async function refreshAll() {
   await Promise.all([loadTeams(), loadStats()]);
   try { await loadPosts({ reset: true }); }
-  catch { toast('The feed could not be loaded.', true); }
+  catch { if (!state.offline) toast('The feed could not be loaded.', true); }
   paintRoute();
 }
 
@@ -858,6 +868,9 @@ async function boot() {
   bindEvents();
 
   $('homeStats').innerHTML = '<div class="skeleton" style="min-height:80px"></div>'.repeat(4);
+  try { await api.health(); }
+  catch { state.offline = true; }
+  paintAdminUi();
   await refreshAll();
 
   // Keep the shared feed reasonably fresh without spamming the server.
