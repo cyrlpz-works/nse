@@ -4,7 +4,8 @@
 // what an anonymous visitor may read or write, and the key cannot override it.
 //
 // Put the real strings between the quotes — not a sample. The Project URL is
-// https://<twenty lowercase characters>.supabase.co and the anon public key is a long
-// eyJ... token with exactly two dots. Anything else is treated as "not connected yet".
+// https://<your-project-ref>.supabase.co and the key is the one labelled "anon public"
+// (it may start with sb_publishable_ on a new project, or eyJ... on an older one).
+// Anything else is treated as "not connected yet".
 export const SUPABASE_URL = '';
 export const SUPABASE_ANON_KEY = '';

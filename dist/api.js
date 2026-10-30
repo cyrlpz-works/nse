@@ -8,15 +8,19 @@ const QUERY_TIMEOUT_MS = 12000;
 const MAX_POST = 1200;
 const SUBMIT_COOLDOWN_MS = 60000;
 
-// Shape checks, not guesses about your project: a Supabase host label is lowercase and the
-// anon key is a three-part JWT. Left as a sample -- YOUR-REF, 'eyJ...' -- the site reports
-// "not connected" instead of silently failing every request against a domain that does not
-// exist, which reads like a broken database.
-const URL_SHAPE = /^https:\/\/[a-z0-9][a-z0-9-]{4,62}\.supabase\.co\/?$/;
-const KEY_SHAPE = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
+// Shape checks, not guesses about your project: a Supabase host label is lowercase, and an
+// anon key is either the newer 'sb_publishable_…' API key or the older three-part eyJ… JWT.
+// Left as a sample -- YOUR-REF, 'eyJ...' -- the site reports "not connected" instead of
+// silently failing every request against a domain that does not exist, which reads like a
+// broken database.
+const URL_SHAPE = /^https:\/\/[a-z0-9][a-z0-9-]{2,62}\.supabase\.co\/?$/;
+const PUBLISHABLE_KEY = /^sb_publishable_[A-Za-z0-9_-]{16,}$/;
+const LEGACY_JWT = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
 
 export function isConfigured() {
-  return URL_SHAPE.test(String(SUPABASE_URL).trim()) && KEY_SHAPE.test(String(SUPABASE_ANON_KEY).trim());
+  const key = String(SUPABASE_ANON_KEY).trim();
+  return URL_SHAPE.test(String(SUPABASE_URL).trim())
+    && (PUBLISHABLE_KEY.test(key) || LEGACY_JWT.test(key));
 }
 
 function uid() {
