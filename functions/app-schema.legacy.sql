@@ -1,3 +1,6 @@
+-- NOT FOR SUPABASE. This is the app.* schema for the abandoned Qoder Sites Edge
+-- Function in this directory; it does not run on a Supabase project (there is no
+-- "app" schema there). The live schema is ../supabase/schema.sql.
 CREATE TABLE app.posts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   visitor_id text NOT NULL,

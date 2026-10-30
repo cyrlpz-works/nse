@@ -17,9 +17,14 @@ supabase/        schema.sql: tables, RLS policies, CHECK rules (run this in Supa
 index.html       redirect stub so GitHub Pages opens the app in dist/
 legacy/          the original single-file page, kept for reference
 functions/       unused Edge Function from the earlier Qoder Sites plan (not deployed)
-schema.sql       the app.* schema that Edge Function used (reference only)
+functions/app-schema.legacy.sql
+                 that Function's app.* schema — **not** the Supabase schema
 dev/             local-only helpers; never published
 ```
+
+Only `supabase/schema.sql` belongs in the Supabase SQL Editor. The legacy one creates tables
+in an `app` schema that does not exist on Supabase, and fails with
+`ERROR: 3F000: schema "app" does not exist`.
 
 ## Connect the site to Supabase (one-time, free)
 
