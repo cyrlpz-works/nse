@@ -80,6 +80,12 @@ alter table public.likes enable row level security;
 alter table public.teams enable row level security;
 alter table public.join_requests enable row level security;
 
+-- Supabase normally grants these automatically; repeat them so a project created with
+-- different defaults still reaches the policies below instead of failing on privileges.
+grant select on public.posts, public.comments, public.likes, public.teams, public.join_requests to anon, authenticated;
+grant insert, update, delete on public.posts, public.comments, public.likes to anon, authenticated;
+grant insert, update, delete on public.teams, public.join_requests to authenticated;
+
 -- Each policy is dropped first so re-running this file repairs rather than fails.
 drop policy if exists "posts readable" on public.posts;
 drop policy if exists "posts queue" on public.posts;
@@ -101,11 +107,18 @@ drop policy if exists "joins readable" on public.join_requests;
 drop policy if exists "joins admin write" on public.join_requests;
 
 -- Visitors read published content only; a signed-in admin also reads the queue.
+--
+-- The visitor-side rules below deliberately omit `to anon`. Supabase used to hand out an
+-- `anon` JWT that PostgREST mapped to the anon role; the newer sb_publishable_... keys are
+-- opaque strings, and the role the database actually sees depends on the project. A rule
+-- written `to anon` silently stops matching on such a project, and the symptom is confusing:
+-- honest visitor inserts are refused with the same message as a tampered one. The WITH CHECK
+-- expression is what enforces moderation, so it must apply to every non-admin role.
 create policy "posts readable" on public.posts
   for select using (status = 'approved' or auth.role() = 'authenticated');
 -- Anyone can submit, but only as 'pending'.
 create policy "posts queue" on public.posts
-  for insert to anon with check (status = 'pending');
+  for insert with check (status = 'pending');
 create policy "posts admin write" on public.posts
   for insert to authenticated with check (status in ('pending', 'approved'));
 create policy "posts admin review" on public.posts
@@ -116,7 +129,7 @@ create policy "posts admin delete" on public.posts
 create policy "comments readable" on public.comments
   for select using (status = 'approved' or auth.role() = 'authenticated');
 create policy "comments queue" on public.comments
-  for insert to anon with check (status = 'pending');
+  for insert with check (status = 'pending');
 create policy "comments admin write" on public.comments
   for insert to authenticated with check (status in ('pending', 'approved'));
 create policy "comments admin review" on public.comments
@@ -127,12 +140,12 @@ create policy "comments admin delete" on public.comments
 -- Likes are counters, not content: public to read, and only on a published post.
 create policy "likes readable" on public.likes for select using (true);
 create policy "likes on published" on public.likes
-  for insert to anon with check (
+  for insert with check (
     exists (select 1 from public.posts p where p.id = post_id and p.status = 'approved')
   );
--- An anonymous visitor must be able to take their like back. A visitor has no server-side
--- identity (it is a device-local uuid), so this delete rule cannot be narrower than 'any'.
-create policy "likes undoable" on public.likes for delete to anon using (true);
+-- A visitor must be able to take their like back. A visitor has no server-side identity
+-- (it is a device-local uuid), so this delete rule cannot be narrower than 'any row'.
+create policy "likes undoable" on public.likes for delete using (true);
 create policy "likes admin" on public.likes for all to authenticated using (true) with check (true);
 
 -- Squads are published by the admin only.

@@ -7,5 +7,5 @@
 // https://<your-project-ref>.supabase.co and the key is the one labelled "anon public"
 // (it may start with sb_publishable_ on a new project, or eyJ... on an older one).
 // Anything else is treated as "not connected yet".
-export const SUPABASE_URL = '';
-export const SUPABASE_ANON_KEY = '';
+export const SUPABASE_URL = 'https://bqsemwjnmmvshlabyerf.supabase.co';
+export const SUPABASE_ANON_KEY = 'sb_publishable_RydLRXKDnuHcygmVbKWxPw_u5hNFbhN';
