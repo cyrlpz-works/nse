@@ -155,7 +155,10 @@ export async function myUserId() {
 
 export async function signOutAsAdmin() {
   if (!isConfigured()) return;
-  try { (await client()).auth.signOut(); } catch { /* already disconnected */ }
+  // Awaited on purpose: signOut() clears the session the next request would otherwise still
+  // carry, and a composer submit that races it is sent as the admin, which publishes the row
+  // instead of queueing it.
+  try { await (await client()).auth.signOut(); } catch { /* already disconnected */ }
 }
 
 export async function hasAdminSession() {
