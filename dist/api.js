@@ -143,7 +143,14 @@ export async function signInAsAdmin(email, password) {
 export async function signUpAccount(email, password) {
   const db = await client();
   const created = await db.auth.signUp({ email: clamp(email, 100).toLowerCase(), password });
-  if (created.error) throw new Error(created.error.message?.includes('already') ? 'account_exists' : 'auth_failed');
+  if (created.error) {
+    // Supabase says which rule the address tripped; a rejected address is not a wrong
+    // password, and naming it is the difference between a captain trying again and giving up.
+    const why = `${created.error.code || ''} ${created.error.message || ''}`;
+    if (/already|registered/i.test(why)) throw new Error('account_exists');
+    if (/invalid|validation/i.test(why)) throw new Error('email_invalid');
+    throw new Error('sign_up_failed');
+  }
   if (!created.data?.session) throw new Error('email_confirmation');
   return isSiteAdmin(db);
 }

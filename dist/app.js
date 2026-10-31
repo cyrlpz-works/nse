@@ -116,6 +116,8 @@ const ERRORS = {
   captain_required: 'Only this squad’s captain can change its roster.',
   sign_in_required: 'Sign in with your own account first — a captain acts as themselves.',
   account_exists: 'That email already has an account. Sign in instead of creating one.',
+  email_invalid: 'That email address was refused. Use a real address — a gmail or similar, not a made-up domain.',
+  sign_up_failed: 'The account could not be created. Try again, or add this account in Supabase → Authentication → Users.',
   email_confirmation: 'That account still needs its email confirmed. Supabase can turn confirmation off in Authentication → Providers.',
   auth_failed: 'That email or password is not correct.',
   backend_missing: 'This site is not connected to its database yet.',
