@@ -80,17 +80,32 @@ async function run(builder) {
   }
 }
 
-async function isSignedIn(db) {
+async function currentUserId(db) {
   const session = await db.auth.getSession();
-  return Boolean(session.data?.session?.user);
+  return session.data?.session?.user?.id ?? null;
+}
+
+// Being signed in is not the test. Sign-ups are open so team captains can have logins, so the
+// database's site_admins table is the only thing that makes someone an admin. A missing table
+// (a project that has not run the newest schema) answers 'no' rather than throwing, which
+// leaves the site readable instead of broken.
+async function isSiteAdmin(db) {
+  const uid = await currentUserId(db);
+  if (!uid) return false;
+  try {
+    const hit = await run(db.from('site_admins').select('user_id').eq('user_id', uid).limit(1));
+    return Boolean(hit.data?.length);
+  } catch {
+    return false;
+  }
 }
 
 const clamp = (value, max) => String(value ?? '').trim().slice(0, max);
 
-// Visitors queue content for review; a signed-in admin publishes straight to the feed.
+// Visitors queue content for review; only a listed site admin publishes straight to the feed.
 async function insertRow(table, row) {
   const db = await client();
-  const status = await isSignedIn(db) ? 'approved' : 'pending';
+  const status = await isSiteAdmin(db) ? 'approved' : 'pending';
   const result = await run(db.from(table).insert({ ...row, status }).select('id,status'));
   return result.data?.[0] ?? { status };
 }
@@ -112,11 +127,27 @@ function assertCooldown(table) {
 // rather than a table name.
 const approved = (query) => query.eq('status', 'approved');
 
+// Signs an account in. The answer is whether that account is listed as a site admin: a captain
+// signs in through the same door and must not be told they run the site.
 export async function signInAsAdmin(email, password) {
   const db = await client();
   const attempt = await db.auth.signInWithPassword({ email: clamp(email, 100).toLowerCase(), password });
   if (attempt.error) throw new Error('auth_failed');
-  return true;
+  return isSiteAdmin(db);
+}
+
+// A team captain needs an account to prove who they are; posting does not.
+export async function signUpAccount(email, password) {
+  const db = await client();
+  const created = await db.auth.signUp({ email: clamp(email, 100).toLowerCase(), password });
+  if (created.error) throw new Error(created.error.message?.includes('already') ? 'account_exists' : 'auth_failed');
+  if (!created.data?.session) throw new Error('email_confirmation');
+  return isSiteAdmin(db);
+}
+
+export async function myUserId() {
+  if (!isConfigured()) return null;
+  try { return await currentUserId(await client()); } catch { return null; }
 }
 
 export async function signOutAsAdmin() {
@@ -126,7 +157,7 @@ export async function signOutAsAdmin() {
 
 export async function hasAdminSession() {
   if (!isConfigured()) return false;
-  try { return await isSignedIn(await client()); } catch { return false; }
+  try { return await isSiteAdmin(await client()); } catch { return false; }
 }
 
 export const api = {
@@ -221,7 +252,7 @@ export const api = {
     const author = clamp(nickname, 24);
     if (!author || author === 'Guest') throw new Error('missing_nickname');
     const db = await client();
-    if (!(await isSignedIn(db))) assertCooldown('posts');
+    if (!(await isSiteAdmin(db))) assertCooldown('posts');
     return insertRow('posts', {
       visitor_id: getVisitorId(),
       author,
@@ -237,7 +268,7 @@ export const api = {
     const author = clamp(nickname, 24);
     if (!author || author === 'Guest') throw new Error('missing_nickname');
     const db = await client();
-    if (!(await isSignedIn(db))) assertCooldown('comments');
+    if (!(await isSiteAdmin(db))) assertCooldown('comments');
     return insertRow('comments', { post_id: postId, visitor_id: getVisitorId(), author, content: text.slice(0, 300) });
   },
 
@@ -260,24 +291,32 @@ export const api = {
   async teams() {
     const db = await client();
     const result = await run(db.from('teams')
-      .select('id,name,logo,description,game_mode,region,required_rank,status,leader,slot_count,created_at')
+      .select('id,name,logo,description,game_mode,region,required_rank,status,leader,slot_count,captain_user_id,captain_nick,created_at')
       .order('created_at', { ascending: false })
       .limit(100));
     const teams = result.data || [];
     const ids = teams.map(team => team.id);
-    let applicants = [];
+    let entries = [];
     if (ids.length) {
       const found = await run(db.from('join_requests')
-        .select('team_id,nickname,created_at').in('team_id', ids).order('created_at').limit(2000));
-      applicants = found.data || [];
+        .select('id,team_id,nickname,status,user_id,created_at')
+        .in('team_id', ids)
+        .order('created_at')
+        .limit(2000));
+      entries = found.data || [];
     }
     return teams.map(team => {
-      const roster = [{ name: team.leader, role: 'Founder' }];
-      applicants
-        .filter(entry => entry.team_id === team.id)
-        .forEach(entry => roster.push({ name: entry.nickname, role: 'Applicant' }));
-      team.roster = roster;
-      team.members = roster.length;
+      const mine = entries.filter(entry => entry.team_id === team.id);
+      const founder = { id: null, name: team.leader, role: 'Founder' };
+      const members = mine
+        .filter(entry => entry.status === 'accepted')
+        .map(entry => ({ id: entry.id, name: entry.nickname, role: 'Member', user_id: entry.user_id }));
+      team.members = [founder, ...members];
+      // Pending applications are hidden by row level security from everyone except their
+      // author, the team's captain and an admin, so an empty list is the normal answer.
+      team.applicants = mine
+        .filter(entry => entry.status === 'pending')
+        .map(entry => ({ id: entry.id, name: entry.nickname, role: 'Applicant', user_id: entry.user_id, created_at: entry.created_at }));
       return team;
     });
   },
@@ -287,7 +326,7 @@ export const api = {
     if (name.length < 2) throw new Error('invalid_input');
     if (!isConfigured()) throw new Error('backend_missing');
     const db = await client();
-    if (!(await isSignedIn(db))) throw new Error('admin_required');
+    if (!(await isSiteAdmin(db))) throw new Error('admin_required');
     try {
       const result = await run(db.from('teams').insert({
         name,
@@ -307,18 +346,48 @@ export const api = {
     }
   },
 
+  // Applying is open to any visitor. A signed-in applicant records their account so the row
+  // stays theirs even from another device, and so a captain can name them later.
   async joinTeam(teamId, nickname) {
     const db = await client();
-    if (!(await isSignedIn(db))) throw new Error('admin_required');
+    const uid = await currentUserId(db);
     try {
-      await run(db.from('join_requests')
-        .insert({ team_id: teamId, visitor_id: getVisitorId(), nickname: clamp(nickname, 24) })
+      const result = await run(db.from('join_requests')
+        .insert({ team_id: teamId, visitor_id: getVisitorId(), user_id: uid, nickname: clamp(nickname, 24) })
         .select('id'));
-      return { duplicated: false };
+      return { duplicated: false, id: result.data?.[0]?.id };
     } catch (error) {
       if (error.pgCode === '23505') return { duplicated: true };
       throw error;
     }
+  },
+
+  // A captain accepts, declines or removes. The database compares the signed-in account with
+  // the team's captain, so a refusal arrives as zero rows rather than an error message.
+  async decideJoin(id, decision) {
+    const status = decision === 'accepted' ? 'accepted' : 'rejected';
+    const db = await client();
+    const uid = await currentUserId(db);
+    if (!uid) throw new Error('sign_in_required');
+    const result = await run(db.from('join_requests')
+      .update({ status, decided_by: uid, decided_at: new Date().toISOString() })
+      .eq('id', id)
+      .in('status', ['pending', 'accepted'])
+      .select('id'));
+    if (!result.data?.length) throw new Error('captain_required');
+    return { ok: true, status };
+  },
+
+  // Only an admin names a captain, and only the database can add someone to site_admins.
+  async assignCaptain(teamId, userId, nickname) {
+    const db = await client();
+    if (!(await isSiteAdmin(db))) throw new Error('admin_required');
+    const result = await run(db.from('teams')
+      .update({ captain_user_id: userId, captain_nick: clamp(nickname, 24) })
+      .eq('id', teamId)
+      .select('id'));
+    if (!result.data?.length) throw new Error('not_found');
+    return { ok: true };
   },
 
   async moderation() {

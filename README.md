@@ -2,7 +2,8 @@
 
 Community hub for a Call of Duty Mobile squad community: a post feed with likes and
 comments, team/squad pages with join requests, and a device-local player profile.
-**Anyone can post, nothing appears until the admin approves it.**
+**Anyone can post and comment, nothing appears until the admin approves it on the Approval
+page. Squad captains run their own roster: accept, decline, remove.**
 
 The live site is static **GitHub Pages** plus a free **Supabase** project (Postgres with
 row level security, and Auth for the admin account). No server code runs on Pages, and none
@@ -30,10 +31,27 @@ in an `app` schema that does not exist on Supabase, and fails with
 
 1. [supabase.com](https://supabase.com) → New project. Any region, the free plan.
 2. SQL Editor → New query → paste the whole contents of `supabase/schema.sql` → **Run**.
-3. Authentication → Providers → Email: turn **Confirm email** off (there is only one admin).
+   Re-running it is safe: rows are kept, missing columns are added, and every policy in the
+   `public` schema is dropped and recreated from this file.
+3. Authentication → Providers → Email: turn **Confirm email** off, then create the admin:
 4. Authentication → Users → Add user: the admin email and a long password.
-5. Project Settings → API: copy the **Project URL** and the **anon public** key.
-6. Put both values in `dist/config.js`, commit, and let Pages rebuild.
+5. SQL Editor → name that account as an admin. The site treats a merely signed-in account as a
+   stranger until it has a row in `site_admins`:
+
+   ```sql
+   select id, email from auth.users;          -- read your own row
+   insert into public.site_admins (user_id, email)
+   values ('the id from that query', 'that email')
+   on conflict (user_id) do update set email = excluded.email;
+   ```
+
+6. Project Settings → API: copy the **Project URL** and the **anon public** key.
+7. Put both values in `dist/config.js`, commit, and let Pages rebuild.
+
+With email confirmation off, anyone can also create their own account from the site's
+**Create an account** button. That is intentional and it does not make them an admin: it is how
+a team captain gets the login that proves their roster decisions. Turn confirmation back on
+when you would rather create captain accounts yourself in the dashboard.
 
 The anon key is meant to be public — it identifies the project, it does not grant access.
 Every request is checked against the policies in `supabase/schema.sql`, and the browser's
@@ -50,34 +68,49 @@ With empty values in `dist/config.js` the site still renders: it shows the desig
 feed and squads, and one notice explaining that no database is connected. Nothing is
 posted, so there are no error toasts.
 
-## Admin sign in and moderation
+## Sign in, approval and captains
 
-The **Admin sign in** button opens a normal email + password dialog handled by Supabase
-Auth; the session lives in `localStorage` and refreshes itself. Signing in makes the browser
-`authenticated`, and only that role may set a row to `approved`, publish squads or record join
-requests. There is no shared key to leak and nothing to rotate in the page itself.
+The **Sign in** button opens a normal email + password dialog handled by Supabase Auth; the
+session lives in `localStorage` and refreshes itself. Signing in alone buys nothing — the
+database compares the account against `public.site_admins` (site admin) and against
+`public.teams.captain_user_id` (squad captain). Authority lives in those two tables, so a
+stranger who signs up through the same dialog is a stranger to the site.
 
 | Action | Who can do it | Where it is enforced |
 | --- | --- | --- |
 | Read the feed, squads, stats, comment threads | anyone | RLS: `status = 'approved'` |
-| Submit a post or a comment | anyone | RLS: anon may only insert `status = 'pending'` |
+| Submit a post or a comment | anyone | RLS: insert allowed only with `status = 'pending'` |
 | Like / unlike a post | anyone, on approved posts | RLS + `unique (post_id, visitor_id)` |
-| See the approval queue | signed-in admin | RLS: pending rows are hidden from `anon` |
-| Approve a queued item | signed-in admin | RLS: only `authenticated` may update |
-| Reject (delete) a queued item | signed-in admin | RLS: only `authenticated` may delete |
-| Publish a squad, add a join request | signed-in admin | RLS: `teams` / `join_requests` writes are admin-only |
+| Ask to join a squad | anyone | RLS: `join_requests` insert is `status = 'pending'` |
+| See the approval queue | site admin | RLS: pending rows hidden from everyone else |
+| Approve / reject (delete) a queued item | site admin | RLS: `posts` / `comments` writes need `is_site_admin()` |
+| Publish or edit a squad card | site admin | RLS: `teams` writes need `is_site_admin()` |
+| Accept, decline or remove a roster row of one squad | that squad's captain | RLS: `is_captain_of(team_id)` + `decided_by = auth.uid()` |
+| Name a squad's captain | site admin | RLS: it is a `teams` update |
+| Add someone to `site_admins` | an existing site admin | RLS: `admins admin only` |
+
+A captain therefore cannot edit the squad's card, approve a post, or touch another squad: the
+only row type they may update is a join request whose team lists their own account id. The
+Approval page is a nav item that appears only for a signed-in site admin; approving there is
+the same update the database would accept from anyone it recognises, so the page is a
+convenience, not the security boundary.
 
 A rejected post also loses its comments and likes — both tables reference `posts (id)` with
 `on delete cascade`. Approved posts appear in the feed for every visitor within the 60-second
 refresh the page already does.
 
 Known limits of this design, stated plainly:
+- To become a captain, a person needs an account **and** a row on the squad's roster or in its
+  applications — that is the only place the site can read an account id from. The step before
+  that (applying with an account) is a normal join request.
+- A captain is one account per squad, and only an admin can move it. There is no "step down"
+  button; replace them with another account, or clear the column in the dashboard.
 - An anonymous visitor cannot see their own queued post (the database hides pending rows from
-  `anon`), so the confirmation is the on-screen message "Sent to the admin".
+  everyone but an admin), so the confirmation is the on-screen message "Sent to the admin".
 - The 60-second pause between submissions is a per-device timer in the browser, not a server
   rate limit. The real protection against spam is that nothing publishes without approval.
 - Anyone who knows the admin password has full write access. Keep it unique, and add a second
-  admin user in Supabase instead of sharing it.
+  row in `site_admins` instead of sharing it.
 - Likes are counted from the like rows, so a visitor who clears their browser storage can like
   a post again — identity is a device-local UUID, not an account.
 - Because that UUID is chosen by the browser, the database cannot tell whose like is whose, so
@@ -109,10 +142,11 @@ Anything else — `Diamond`, `Master V` — is rejected by the database.
 | Data | Where | Shared between visitors |
 | --- | --- | --- |
 | Posts, comments, likes | `public.posts`, `public.comments`, `public.likes` | yes |
-| Squads, join requests | `public.teams`, `public.join_requests` | yes |
+| Squads, join requests, captains | `public.teams`, `public.join_requests` | yes |
+| Who runs the site | `public.site_admins` | yes, read by the policies |
 | Your nickname, rank, bio | `localStorage` (`jt.profile`) | no, device-local |
 | Visitor identity | `localStorage` (`jt.visitor`, UUID) | attribution for likes/joins |
-| Admin session | `localStorage` (Supabase auth token) | signs this browser in as admin |
+| Admin or captain session | `localStorage` (Supabase auth token) | proves which account this browser is |
 | Submission timer | `localStorage` (`jt.last.*`) | courtesy cooldown only |
 
 The browser talks to `https://<project>.supabase.co/rest/v1/...` through the Supabase SDK,
@@ -131,7 +165,8 @@ join request per visitor per squad.
 
 GitHub Pages builds from the repository root (`build_type: legacy`); the root `index.html`
 redirects to `dist/`. Asset links inside `dist/` are relative, so the site renders correctly
-under the `/JAS-TRIAS-CODM-Community/` subpath. Pushing to `main` is the deploy:
+under whatever subpath the repository is published from (`/TRIAS-Community/` today). Pushing to
+`main` is the deploy:
 
 ```bash
 git push origin main

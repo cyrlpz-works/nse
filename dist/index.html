@@ -33,10 +33,11 @@
       <button class="nav-link" type="button" data-nav="community">Community</button>
       <button class="nav-link" type="button" data-nav="teams">Teams</button>
       <button class="nav-link" type="button" data-nav="profile">Profile</button>
+      <button class="nav-link" type="button" data-nav="approval" id="approvalNav" hidden>Approval<span class="nav-count" id="approvalCount" hidden></span></button>
     </nav>
 
     <div class="header-tools">
-      <button class="btn btn-ghost btn-sm" type="button" id="adminButton" aria-haspopup="dialog">Admin sign in</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="adminButton" aria-haspopup="dialog">Sign in</button>
       <div class="header-user" id="headerUser">
         <span class="avatar accent" id="headerInitial" aria-hidden="true">?</span>
         <span class="header-user-meta">
@@ -109,14 +110,6 @@
       <button class="btn btn-primary btn-block" type="submit" id="postSubmit">Publish post</button>
     </form>
 
-    <section class="panel moderation" id="moderationQueue" hidden aria-labelledby="queueTitle">
-      <div class="section-head">
-        <h2 id="queueTitle">Awaiting approval</h2>
-        <small id="queueCount" aria-live="polite"></small>
-      </div>
-      <div id="queueList"></div>
-    </section>
-
     <div class="toolbar">
       <div class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg>
@@ -131,6 +124,26 @@
 
     <div id="feedList" aria-live="polite"></div>
     <button class="btn btn-ghost btn-block" type="button" id="loadMore" hidden>Load older posts</button>
+  </section>
+
+  <!-- ============ APPROVAL (site admin only) ============ -->
+  <section class="view" id="view-approval" aria-labelledby="queueTitle">
+    <div class="section-head">
+      <h2 id="queueTitle">Awaiting approval</h2>
+      <small id="queueCount" aria-live="polite"></small>
+    </div>
+    <p class="notice">Nothing reaches the feed until you approve it here. Rejecting deletes the entry for good.</p>
+    <div class="panel moderation" id="moderationQueue">
+      <div id="queueList"></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-head">
+      <h2>Squad captains</h2>
+      <small>you assign who captains a squad</small>
+    </div>
+    <p class="field-hint">A captain runs one squad's roster: accept or decline applications and remove their own members. They cannot edit the squad card, approve posts or name other captains. Open a squad from the Teams page to hand it to someone.</p>
+    <div class="team-grid" id="captainGrid"></div>
   </section>
 
   <!-- ============ TEAMS ============ -->
@@ -218,6 +231,7 @@
         <label for="teamSlots">Roster size</label>
         <input class="input" id="teamSlots" type="number" min="1" max="12" value="5">
       </div>
+      <p class="field-hint">Publishing a squad needs the site admin. Afterwards, open the squad and hand it to a captain so they can run its roster.</p>
     </div>
     <div class="dialog-foot">
       <button class="btn btn-ghost" type="button" data-close-dialog>Cancel</button>
@@ -226,28 +240,28 @@
   </form>
 </dialog>
 
-<!-- ============ ADMIN SIGN IN DIALOG ============ -->
+<!-- ============ SIGN IN / CREATE ACCOUNT DIALOG ============ -->
 <dialog id="adminDialog">
   <form id="adminForm">
     <div class="dialog-head">
-      <h2>Admin sign in</h2>
+      <h2 id="authDialogTitle">Admin sign in</h2>
       <button class="close-btn" type="button" data-close-admin aria-label="Close">✕</button>
     </div>
     <div class="dialog-body">
       <div class="field">
-        <label for="adminEmail">Admin email</label>
-        <input class="input" id="adminEmail" type="email" autocomplete="username" maxlength="100"
+        <label for="authEmail">Email</label>
+        <input class="input" id="authEmail" type="email" autocomplete="username" maxlength="100"
           placeholder="the address in Supabase Authentication">
       </div>
       <div class="field">
-        <label for="adminPassword">Password</label>
-        <input class="input" id="adminPassword" type="password" autocomplete="current-password" maxlength="200"
-          placeholder="your admin password">
-        <p class="field-hint">Signing in lets you approve posts, publish squads and add join requests. Only the account you created in Supabase can do this.</p>
+        <label for="authPassword">Password</label>
+        <input class="input" id="authPassword" type="password" autocomplete="current-password" maxlength="200"
+          placeholder="at least 6 characters">
+        <p class="field-hint" id="authHint">Site admins approve posts, publish squads and name captains. A team captain signs in through this same dialog — they only run their own squad's roster.</p>
       </div>
     </div>
     <div class="dialog-foot">
-      <button class="btn btn-ghost" type="button" data-close-admin>Cancel</button>
+      <button class="btn btn-ghost" type="button" id="authToggle">Create an account</button>
       <button class="btn btn-primary" type="submit" id="adminSubmit">Sign in</button>
     </div>
   </form>

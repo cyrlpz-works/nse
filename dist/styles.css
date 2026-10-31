@@ -169,6 +169,17 @@ a:hover { text-decoration: underline; }
   box-shadow: var(--shadow-pink);
 }
 
+.nav-count {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: var(--pink);
+  color: var(--white);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.nav-link[aria-current='page'] .nav-count { background: rgba(0, 0, 0, 0.32); }
+
 .header-user {
   display: flex;
   align-items: center;
@@ -407,6 +418,16 @@ main { padding-block: clamp(1.75rem, 4vw, 3.25rem) 4rem; }
 .queue-byline b { color: var(--text); }
 .queue-byline i { font-style: normal; color: var(--muted); }
 .queue-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+/* Roster and captain rows reuse the queue layout. */
+.queue-item .avatar { width: 30px; height: 30px; border-radius: 9px; font-size: 0.72rem; flex-shrink: 0; }
+.queue-item p small { display: block; color: var(--dim); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.panel-sub {
+  font-family: var(--font-display);
+  font-size: 0.85rem; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--dim); margin: 0 0 0.6rem;
+}
 
 .pending-flag {
   display: inline-flex; align-items: center; gap: 0.4rem;

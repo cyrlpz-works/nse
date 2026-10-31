@@ -1,4 +1,4 @@
-import { api, getVisitorId, isConfigured, signInAsAdmin, signOutAsAdmin, hasAdminSession } from './api.js';
+import { api, getVisitorId, isConfigured, signInAsAdmin, signUpAccount, signOutAsAdmin, hasAdminSession, myUserId } from './api.js';
 
 const CATEGORIES = ['General', 'Multiplayer', 'Battle Royale', 'Ranked', 'Loadouts', 'Tips & Guides', 'Looking for Team', 'Team Recruitment'];
 
@@ -35,7 +35,13 @@ const state = {
   loadingComments: new Set(),
   offline: false,
   isAdmin: false,
+  myUserId: null,
 };
+
+// An admin runs the site; a captain runs one squad's roster. Both need a signed-in account,
+// and the database — not these checks — is what actually allows the write.
+const isSignedIn = () => Boolean(state.myUserId);
+const canCaptain = (team) => state.isAdmin || (isSignedIn() && team.captain_user_id === state.myUserId);
 
 /* ---------------- profile (device-local) ---------------- */
 const DEFAULT_PROFILE = {
@@ -107,6 +113,10 @@ const ERRORS = {
   not_found: 'That entry no longer exists.',
   duplicate_name: 'A squad with that name already exists.',
   admin_required: 'Sign in as the site admin to do that.',
+  captain_required: 'Only this squad’s captain can change its roster.',
+  sign_in_required: 'Sign in with your own account first — a captain acts as themselves.',
+  account_exists: 'That email already has an account. Sign in instead of creating one.',
+  email_confirmation: 'That account still needs its email confirmed. Supabase can turn confirmation off in Authentication → Providers.',
   auth_failed: 'That email or password is not correct.',
   backend_missing: 'This site is not connected to its database yet.',
   database_unavailable: 'The database refused that request.',
@@ -122,13 +132,14 @@ const ROUTES = {
   teams: () => 'teams',
   team: (id) => ({ view: 'team', id }),
   profile: () => 'profile',
+  approval: () => 'approval',
 };
 
 function currentRoute() {
   const hash = location.hash.replace(/^#\/?/, '');
   const team = hash.match(/^teams\/([0-9a-fA-F-]{36})$/);
   if (team) return { view: 'team', id: team[1] };
-  if (['home', 'community', 'teams', 'profile'].includes(hash)) return { view: hash };
+  if (['home', 'community', 'teams', 'profile', 'approval'].includes(hash)) return { view: hash };
   return { view: 'home' };
 }
 
@@ -153,6 +164,7 @@ function paintRoute() {
   if (route.view === 'home') renderHome();
   if (route.view === 'community') renderFeed();
   if (route.view === 'teams') renderTeamGrid();
+  if (route.view === 'approval') { renderModeration(); renderCaptainBoard(); }
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
@@ -170,22 +182,25 @@ function paintHeader() {
 
 function paintAdminUi() {
   const button = $('adminButton');
-  const submitLabel = state.isAdmin ? 'Publish post' : 'Send for approval';
-  button.textContent = state.isAdmin ? 'Signed in as admin' : 'Admin sign in';
-  button.classList.toggle('is-on', state.isAdmin);
-  button.setAttribute('aria-label', state.isAdmin
+  const signedInAs = state.isAdmin ? 'admin' : isSignedIn() ? 'member' : 'guest';
+  button.textContent = signedInAs === 'admin' ? 'Signed in as admin' : signedInAs === 'member' ? 'Signed in' : 'Sign in';
+  button.classList.toggle('is-on', signedInAs !== 'guest');
+  button.setAttribute('aria-label', signedInAs === 'admin'
     ? 'Signed in as the site admin. Click to sign out'
-    : 'Sign in as the site admin to publish content');
+    : signedInAs === 'member'
+      ? 'Signed in with your own account. Click to sign out'
+      : 'Sign in — the site admin account, or the account a squad captain uses');
+  $('approvalNav').hidden = !state.isAdmin;
   $('postForm').hidden = state.offline;
-  $('postSubmit').textContent = submitLabel;
+  $('postSubmit').textContent = state.isAdmin ? 'Publish post' : 'Send for approval';
   $('openCreateTeam').hidden = state.offline || !state.isAdmin;
   const notice = $('modeNotice');
-  notice.hidden = state.isAdmin && !state.offline;
+  notice.hidden = state.offline;
   notice.textContent = state.offline
     ? (isConfigured()
       ? 'The community database could not be reached, so the feed and squads stay empty and nothing can be published.'
       : 'This site is not connected to its database yet, so the feed and squads stay empty. Add the project URL and anon key in dist/config.js.')
-    : 'Anyone can post, but the site admin approves every post and comment before it appears in the feed. Squads are published by the admin. Your profile stays on this device.';
+    : 'Anyone can post and comment, but the admin approves every one of them on the Approval page before they reach the feed. Squads are published by the admin, and the captain they name runs that squad’s roster. Your profile stays on this device.';
   renderModeration();
 }
 
@@ -260,8 +275,9 @@ function teamCard(team) {
     <div class="team-meta">
       <i>${esc(team.game_mode)}</i>
       <i>${esc(team.region)}</i>
-      <i>${team.members}/${team.slot_count} members</i>
+      <i>${team.members.length}/${team.slot_count} members</i>
       <i>Min rank: ${esc(team.required_rank)}</i>
+      <i>${team.captain_nick ? `Captain: ${esc(team.captain_nick)}` : 'No captain yet'}</i>
     </div>`;
   return button;
 }
@@ -391,25 +407,32 @@ function queueNode(kind, item, meta) {
   return node;
 }
 
+function paintQueueBadge(total) {
+  const badge = $('approvalCount');
+  badge.textContent = total > 0 ? String(total) : '';
+  badge.hidden = !(total > 0);
+}
+
 async function renderModeration() {
-  const panel = $('moderationQueue');
-  if (!panel) return;
   const list = $('queueList');
   const count = $('queueCount');
+  paintQueueBadge(0);
   if (state.offline || !state.isAdmin) {
-    panel.hidden = true;
-    list.replaceChildren();
     count.textContent = '';
+    list.replaceChildren(emptyBlock(state.offline
+      ? 'The database is unreachable, so nothing can be reviewed right now.'
+      : 'The approval queue belongs to the site admin. Sign in with that account to open it.'));
     return;
   }
-  panel.hidden = false;
-  list.innerHTML = '<div class="skeleton" style="min-height:72px"></div>';
+  list.replaceChildren(skeletonBlock(1));
   try {
     const queue = await api.moderation();
     const posts = queue.posts || [];
     const comments = queue.comments || [];
-    count.textContent = `${posts.length + comments.length} waiting`;
-    if (!posts.length && !comments.length) {
+    const total = posts.length + comments.length;
+    count.textContent = total ? `${total} waiting` : 'Nothing waiting';
+    paintQueueBadge(total);
+    if (!total) {
       list.replaceChildren(emptyBlock('Nothing waiting — the feed is clean.'));
       return;
     }
@@ -485,6 +508,14 @@ function renderTeamGrid() {
   else list.forEach(team => host.appendChild(teamCard(team)));
 }
 
+// The admin's own overview of who runs which squad, on the Approval page.
+function renderCaptainBoard() {
+  const host = $('captainGrid');
+  host.replaceChildren();
+  if (!state.teams.length) { host.appendChild(emptyBlock(squadsEmptyCopy())); return; }
+  state.teams.forEach(team => host.appendChild(teamCard(team)));
+}
+
 function renderTeamDetail(teamId) {
   const team = state.teams.find(t => t.id === teamId);
   const host = $('teamDetail');
@@ -494,9 +525,16 @@ function renderTeamDetail(teamId) {
     return;
   }
   const recruiting = team.status === 'recruiting';
-  const slots = Math.max(team.slot_count, team.members);
-  const roster = team.roster?.length ? team.roster : [{ name: team.leader, role: 'Founder' }];
-  const filled = Math.min(roster.length, slots);
+  const roster = team.members;
+  const applicants = team.applicants || [];
+  const slots = Math.max(team.slot_count, roster.length);
+  const openSlots = Math.max(0, slots - roster.length);
+  const manages = canCaptain(team);
+  const removable = roster.filter(entry => entry.id);
+  // Only an account can captain a squad, so the choices are the people whose login the
+  // database already recorded on a join request.
+  const candidates = [...roster, ...applicants].filter(entry => entry.user_id);
+  const isCaptainHere = Boolean(state.myUserId) && team.captain_user_id === state.myUserId;
 
   host.innerHTML = `
     <div class="banner"></div>
@@ -504,7 +542,7 @@ function renderTeamDetail(teamId) {
       <span class="avatar" aria-hidden="true">${esc(team.logo)}</span>
       <div class="panel-head-text">
         <h2 id="teamDetailName">${esc(team.name)}</h2>
-        <p>Led by ${esc(team.leader)}</p>
+        <p>${team.captain_nick ? `Captain: <strong style="color:var(--text)">${esc(team.captain_nick)}</strong>` : `Led by ${esc(team.leader)}`}</p>
       </div>
       <span class="badge ${recruiting ? 'ok' : 'warn'}">${recruiting ? 'Recruiting' : 'Full roster'}</span>
     </div>
@@ -517,25 +555,64 @@ function renderTeamDetail(teamId) {
         <section>
           <h3>Looking for</h3>
           <p>${esc(team.game_mode)} · ${esc(team.region)}<br>Minimum rank: <strong style="color:var(--text)">${esc(team.required_rank)}</strong><br>
-          Open slots: <strong style="color:var(--text)">${Math.max(0, slots - filled)}</strong> of ${slots}</p>
+          Open slots: <strong style="color:var(--text)">${openSlots}</strong> of ${slots}</p>
         </section>
       </div>
       <div class="divider"></div>
-      <h3 style="font-family:var(--font-display);font-size:.85rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:.6rem">Roster</h3>
+      <h3 class="panel-sub">Roster</h3>
       <div class="roster">
         ${Array.from({ length: slots }, (_, i) => {
           const entry = roster[i];
-          return entry
-            ? `<div class="slot"><span class="avatar" aria-hidden="true">${esc(initials(entry.name))}</span><p><b>${esc(entry.name)}</b><small>${esc(entry.role)}</small></p></div>`
-            : `<div class="slot open"><span class="avatar" aria-hidden="true">+</span><p><b>Open slot</b><small>unclaimed</small></p></div>`;
+          if (!entry) return '<div class="slot open"><span class="avatar" aria-hidden="true">+</span><p><b>Open slot</b><small>unclaimed</small></p></div>';
+          const label = team.captain_user_id && entry.user_id === team.captain_user_id ? 'Captain' : entry.role;
+          return `<div class="slot"><span class="avatar" aria-hidden="true">${esc(initials(entry.name))}</span><p><b>${esc(entry.name)}</b><small>${esc(label)}</small></p></div>`;
         }).join('')}
       </div>
       <div class="divider"></div>
-      ${state.isAdmin
-        ? `<button class="btn btn-primary btn-block" type="button" data-join="${esc(team.id)}" ${recruiting ? '' : 'disabled'}>
-             ${recruiting ? 'Add a join request' : 'Roster is full'}
-           </button>`
-        : `<p class="notice">Join requests are recorded by the site admin. Message the squad leader in the feed.</p>`}
+      <button class="btn btn-primary btn-block" type="button" data-join="${esc(team.id)}" ${recruiting ? '' : 'disabled'}>
+        ${recruiting ? 'Request a join slot' : 'Roster is full'}
+      </button>
+      <p class="field-hint">${recruiting
+        ? `This squad’s captain decides who gets in${isCaptainHere ? ' — that is you' : ''}.`
+        : 'This squad is not taking applications right now.'}</p>
+      ${manages ? `
+        <div class="divider"></div>
+        <h3 class="panel-sub">Roster decisions${state.isAdmin && !isCaptainHere ? ' (admin)' : ''}</h3>
+        ${applicants.length ? applicants.map(entry => `
+          <div class="queue-item">
+            <div class="queue-text">
+              <p class="queue-byline"><b>${esc(entry.name)}</b> · applied ${esc(timeAgo(entry.created_at))}${entry.user_id ? '' : ' · no account linked'}</p>
+            </div>
+            <div class="queue-actions">
+              <button class="btn btn-primary btn-sm" type="button" data-decide="accepted:${esc(entry.id)}">Accept</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-decide="rejected:${esc(entry.id)}">Decline</button>
+            </div>
+          </div>`).join('') : '<p class="field-hint">No applications are waiting.</p>'}
+        ${removable.length ? `
+          <p class="field-hint" style="margin-top:1rem">Members you can take off the roster:</p>
+          ${removable.map(entry => `
+          <div class="queue-item">
+            <div class="queue-text"><p class="queue-byline"><b>${esc(entry.name)}</b> · member</p></div>
+            <div class="queue-actions">
+              <button class="btn btn-ghost btn-sm" type="button" data-decide="rejected:${esc(entry.id)}">Remove</button>
+            </div>
+          </div>`).join('')}` : ''}` : ''}
+      ${state.isAdmin ? `
+        <div class="divider"></div>
+        <h3 class="panel-sub">Assign the captain</h3>
+        <p class="field-hint">Only you can hand a squad to someone. A captain manages that one roster — applications, members — and nothing else. They need an account of their own, which they get from “Create an account” in the sign-in dialog.</p>
+        ${candidates.length ? candidates.map(entry => {
+          const current = team.captain_user_id === entry.user_id;
+          return `
+          <div class="queue-item">
+            <div class="queue-text"><p class="queue-byline"><b>${esc(entry.name)}</b> · ${esc(entry.role)}${current ? ' · current captain' : ''}</p></div>
+            <div class="queue-actions">
+              <button class="btn ${current ? 'btn-ghost' : 'btn-primary'} btn-sm" type="button"
+                data-captain-user="${esc(entry.user_id)}" data-captain-team="${esc(team.id)}" data-captain-nick="${esc(entry.name)}"
+                ${current ? 'disabled' : ''}>${current ? 'Current captain' : 'Make captain'}</button>
+            </div>
+          </div>`;
+        }).join('') : '<p class="field-hint">Nobody on this roster or in its applications has a linked account yet.</p>'}` : ''}
     </div>`;
 }
 
@@ -791,6 +868,33 @@ async function joinTeam(teamId) {
   }
 }
 
+// A captain (or the admin) accepts, declines or removes one row of a squad's roster.
+async function decideJoin(id, decision, button) {
+  button.disabled = true;
+  try {
+    await api.decideJoin(id, decision);
+    toast(decision === 'accepted' ? 'Accepted — they are on the roster.' : 'Taken off the roster.');
+    await Promise.all([loadTeams(), loadStats()]);
+    paintRoute();
+  } catch (error) {
+    toast(explain(error), true);
+    button.disabled = false;
+  }
+}
+
+async function assignCaptain(teamId, userId, nickname, button) {
+  button.disabled = true;
+  try {
+    await api.assignCaptain(teamId, userId, nickname);
+    await loadTeams();
+    paintRoute();
+    toast(`${nickname} now runs that squad’s roster.`);
+  } catch (error) {
+    toast(explain(error), true);
+    button.disabled = false;
+  }
+}
+
 async function createTeam(form) {
   const data = {
     name: form.teamName.value.trim(),
@@ -848,6 +952,20 @@ function updateCharCount() {
   node.classList.toggle('low', left < 120);
 }
 
+/* ---------------- sign in / create account ---------------- */
+let authMode = 'signin';
+function setAuthMode(mode) {
+  authMode = mode;
+  const signingIn = mode === 'signin';
+  $('authDialogTitle').textContent = signingIn ? 'Admin sign in' : 'Create an account';
+  $('adminSubmit').textContent = signingIn ? 'Sign in' : 'Create account';
+  $('authToggle').textContent = signingIn ? 'Create an account' : 'I already have an account';
+  $('authPassword').autocomplete = signingIn ? 'current-password' : 'new-password';
+  $('authHint').textContent = signingIn
+    ? 'Site admins approve posts, publish squads and name captains. A captain signs in through this same dialog and runs only their own squad’s roster.'
+    : 'A squad captain needs an account of their own — that account is what proves the roster changes came from them. Creating one does not make anyone an admin.';
+}
+
 function bindEvents() {
   document.addEventListener('click', (event) => {
     const nav = event.target.closest('[data-nav]');
@@ -871,6 +989,19 @@ function bindEvents() {
 
     const join = event.target.closest('[data-join]');
     if (join) { joinTeam(join.dataset.join); return; }
+
+    const decide = event.target.closest('[data-decide]');
+    if (decide) {
+      const [decision, id] = decide.dataset.decide.split(':');
+      decideJoin(id, decision, decide);
+      return;
+    }
+
+    const captain = event.target.closest('[data-captain-user]');
+    if (captain) {
+      assignCaptain(captain.dataset.captainTeam, captain.dataset.captainUser, captain.dataset.captainNick, captain);
+      return;
+    }
 
     if (event.target.closest('[data-close-dialog]')) $('createTeamDialog').close();
   });
@@ -907,32 +1038,42 @@ function bindEvents() {
   $('headerUser').style.cursor = 'pointer';
 
   $('adminButton').addEventListener('click', async () => {
-    if (state.isAdmin) { await signOutAdmin(); return; }
-    $('adminEmail').value = '';
-    $('adminPassword').value = '';
+    if (state.isAdmin || isSignedIn()) { await signOutAdmin(); return; }
+    $('authEmail').value = '';
+    $('authPassword').value = '';
+    setAuthMode('signin');
     $('adminDialog').showModal();
-    $('adminEmail').focus();
+    $('authEmail').focus();
   });
+  $('authToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
   $('adminForm').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const email = $('adminEmail').value.trim();
-    const password = $('adminPassword').value;
-    if (!email || !password) { toast('Enter the admin email and password.', true); return; }
+    const email = $('authEmail').value.trim();
+    const password = $('authPassword').value;
+    if (!email || !password) { toast('Enter your email and password.', true); return; }
+    if (authMode === 'signup' && password.length < 6) { toast('A password needs at least 6 characters.', true); return; }
     const button = $('adminSubmit');
+    const label = button.textContent;
     button.disabled = true;
-    button.textContent = 'Signing in…';
+    button.textContent = authMode === 'signin' ? 'Signing in…' : 'Creating…';
     try {
-      await signInAsAdmin(email, password);
-      state.isAdmin = true;
+      const asAdmin = authMode === 'signin'
+        ? await signInAsAdmin(email, password)
+        : await signUpAccount(email, password);
+      state.isAdmin = Boolean(asAdmin);
+      state.myUserId = await myUserId();
       $('adminDialog').close();
+      $('authPassword').value = '';
       paintAdminUi();
       await refreshAll();
-      toast('Signed in — you can publish now.');
+      toast(state.isAdmin
+        ? 'Signed in as the admin — you can publish, approve and name captains.'
+        : 'Signed in. You can manage the rosters of squads you captain.');
     } catch (error) {
       toast(explain(error), true);
     } finally {
       button.disabled = false;
-      button.textContent = 'Sign in';
+      button.textContent = label;
     }
   });
   document.querySelectorAll('[data-close-admin]').forEach(node =>
@@ -944,14 +1085,16 @@ function bindEvents() {
 async function signOutAdmin() {
   await signOutAsAdmin();
   state.isAdmin = false;
+  state.myUserId = null;
   paintAdminUi();
   await refreshAll();
-  toast('Signed out — the site is read-only again.');
+  toast('Signed out — approval and roster tools are hidden again.');
 }
 
 /* ---------------- boot ---------------- */
 async function boot() {
   $('footerYear').textContent = String(new Date().getFullYear());
+  state.myUserId = await myUserId();
   state.isAdmin = await hasAdminSession();
   paintHeader();
   updateCharCount();
@@ -967,10 +1110,15 @@ async function boot() {
   setInterval(async () => {
     if (document.hidden) return;
     try {
-      await loadPosts({ reset: true });
-      await loadStats();
+      await Promise.all([loadPosts({ reset: true }), loadTeams(), loadStats()]);
       renderFeedOrHome();
       if (state.route === 'home') renderHome();
+      if (state.route === 'teams') renderTeamGrid();
+      if (state.route === 'team') renderTeamDetail(currentRoute().id);
+      if (state.isAdmin) {
+        renderModeration();
+        if (state.route === 'approval') renderCaptainBoard();
+      }
     } catch { /* keep current view */ }
   }, 60000);
 }
