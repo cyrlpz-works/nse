@@ -239,6 +239,9 @@ alter table public.comments add column if not exists user_id uuid;
 alter table public.likes alter column visitor_id drop not null;
 alter table public.likes add column if not exists user_id uuid;
 alter table public.likes add column if not exists taps integer not null default 1;
+-- The tap counter writes this column on every heart, and a table that predates the CREATE TABLE
+-- body above never got it: without it the update is rejected and a tap can never go past one.
+alter table public.likes add column if not exists updated_at timestamptz not null default now();
 
 alter table public.teams add column if not exists captain_user_id uuid;
 alter table public.teams add column if not exists captain_nick text

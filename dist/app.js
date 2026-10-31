@@ -1433,10 +1433,13 @@ async function withdraw(kind, id, button) {
 }
 
 function refreshPostNode(postId) {
-  const existing = document.querySelector(`[data-id="${CSS.escape(postId)}"]`);
   const post = state.posts.find(p => p.id === postId);
-  if (!existing || !post) return;
-  existing.replaceWith(postNode(post));
+  if (!post) return;
+  // The same post can be on screen twice -- once in the home list, once in the feed -- and only
+  // one of those views is visible. Replacing just the first match redrew the hidden copy, so an
+  // opened comment thread appeared to do nothing.
+  const nodes = document.querySelectorAll(`[data-id="${CSS.escape(postId)}"]`);
+  nodes.forEach(node => node.replaceWith(postNode(post)));
 }
 
 function renderFeedOrHome() {
