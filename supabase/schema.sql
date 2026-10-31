@@ -4,8 +4,10 @@
 -- recreated by name, and every policy in the public schema is wiped and rebuilt. No rows are deleted.
 
 -- Six rules live here, not in the browser:
---   1. Moderation. A member can only ever insert posts and comments marked 'pending'. Only an
---      account listed in public.site_admins can publish, approve, reject or delete.
+--   1. Moderation. A member can only ever insert posts marked 'pending', and only an account
+--      listed in public.site_admins can publish, approve, reject or delete a post. Comments are
+--      deliberately not queued: they publish the moment they are sent, and the admin's remaining
+--      power over them is deletion.
 --   2. Admin identity. Being signed in is NOT enough. Sign-ups stay open because every member now
 --      needs an account, so authority comes from the site_admins table rather than from the role.
 --   3. Ownership. A profile row is writable only by its own account, a tap row only by the account
@@ -263,6 +265,12 @@ alter table public.comments alter column visitor_id drop not null;
 alter table public.comments alter column author drop not null;
 alter table public.comments add column if not exists user_id uuid;
 
+-- Comments no longer queue for approval. The column stays so rows written before this change keep
+-- their history, but the default is now 'approved' and the rows already waiting are published here:
+-- leaving them 'pending' would strand words nobody on the site can see once the review UI is gone.
+alter table public.comments alter column status set default 'approved';
+update public.comments set status = 'approved' where status = 'pending';
+
 alter table public.likes alter column visitor_id drop not null;
 alter table public.likes add column if not exists user_id uuid;
 alter table public.likes add column if not exists taps integer not null default 1;
@@ -437,6 +445,7 @@ alter table public.profiles add constraint profiles_exec_position_check check (
 );
 -- The queue states, stated here too so a project whose tables predate this file cannot drift: an
 -- 'archived'-or-typo status would otherwise be invisible to the Approval tab and unapprovable.
+-- Comments keep the same two values only for rows written before approval was dropped there.
 alter table public.posts drop constraint if exists posts_status_check;
 alter table public.posts add constraint posts_status_check check (status in ('pending', 'approved'));
 alter table public.comments drop constraint if exists comments_status_check;
@@ -568,19 +577,15 @@ create policy "posts own pending delete" on public.posts
 create policy "posts admin delete" on public.posts
   for delete using (public.is_site_admin());
 
+-- A comment is public as soon as it is sent, so the read rule is the whole table rather than a
+-- status test: that also means a row an older browser queued as 'pending' cannot sit invisible.
+-- The insert rule still ties the row to its author, which is what makes the name on a comment real.
 create policy "comments readable" on public.comments
-  for select using (
-    status = 'approved'
-    or public.is_site_admin()
-    or (auth.uid() is not null and user_id = auth.uid())
-  );
-create policy "comments queue" on public.comments
-  for insert with check (status = 'pending' and user_id = auth.uid());
-create policy "comments admin write" on public.comments
-  for insert with check (status = 'approved' and user_id = auth.uid() and public.is_site_admin());
-create policy "comments admin review" on public.comments
-  for update using (public.is_site_admin())
-  with check (public.is_site_admin() and status in ('pending', 'approved'));
+  for select using (true);
+create policy "comments own insert" on public.comments
+  for insert with check (user_id = auth.uid());
+-- Its author may take back a row still waiting from before comments were freed; once other people
+-- could have read it, removing a comment is the admin's call, the same as a published post.
 create policy "comments own pending delete" on public.comments
   for delete using (user_id = auth.uid() and status = 'pending');
 create policy "comments admin delete" on public.comments

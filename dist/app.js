@@ -3,7 +3,7 @@
 import {
   api, isConfigured, signIn, signUpAccount, signOutAsAdmin, hasAdminSession, myUserId, myProfile,
   RANK_TIERS, MP_ROLES, BR_CLASSES, EXEC_POSITIONS, CATEGORIES, youTubeId,
-} from './api.js?v=2026-10-31-12';
+} from './api.js?v=2026-11-01-1';
 
 // The ladder has no subdivisions any more: a tier is the whole rank, and a Legendary carries the
 // points that place them on the leaderboard.
@@ -403,6 +403,7 @@ function commentsMarkup(list, loading) {
       ${avatarMarkup(c)}
       <p><b>${esc(c.author)}</b><br><span>${esc(c.content)}</span></p>
       <time>${esc(timeAgo(c.created_at))}</time>
+      ${state.isAdmin ? `<button class="icon-btn danger" type="button" data-moderate="reject:comment:${esc(c.id)}">Remove</button>` : ''}
     </div>`).join('');
 }
 
@@ -579,8 +580,7 @@ async function renderModeration() {
   try {
     const queue = await api.moderation();
     const posts = queue.posts || [];
-    const comments = queue.comments || [];
-    const total = posts.length + comments.length;
+    const total = posts.length;
     count.textContent = total ? `${total} waiting` : 'Nothing waiting';
     paintQueueBadge(total);
     if (!total) {
@@ -590,8 +590,6 @@ async function renderModeration() {
     list.replaceChildren(
       ...posts.map(item => queueNode('post', item,
         `<span class="badge pink">${esc(item.rank)}</span> <span class="badge">${esc(item.category)}</span>`)),
-      ...comments.map(item => queueNode('comment', item,
-        `commenting on <i>${esc(item.post_author || 'a removed post')}</i>: “${esc(item.post_excerpt)}”`)),
     );
   } catch (error) {
     count.textContent = '';
@@ -686,6 +684,16 @@ async function moderate(op, kind, id, button) {
   try {
     await api.moderate({ op, kind, id });
     toast(op === 'approve' ? 'Approved — it is live in the feed.' : 'Deleted.');
+    // A comment is deleted from its own open thread, and that thread is cached per post: without
+    // refetching it the removed line stays on screen until the next full reload. The comment count
+    // needs no touch -- the feed reload below reads it back from the database.
+    if (kind === 'comment') {
+      const postId = button.closest('[data-comments-panel]')?.dataset.commentsPanel;
+      if (postId) {
+        try { state.commentsByPost.set(postId, await api.comments(postId)); }
+        catch { state.commentsByPost.set(postId, []); }
+      }
+    }
     await Promise.all([loadPosts({ reset: true }), loadStats(), loadTeams(), loadLeaderboard()]);
     paintRoute();
     renderModeration();
@@ -1619,15 +1627,11 @@ async function toggleComments(postId) {
 async function addComment(postId, content) {
   const post = state.posts.find(p => p.id === postId);
   try {
-    const result = await api.comment(postId, content, { asMember: !state.isAdmin });
-    if (result.status === 'approved') {
-      if (post) post.comments += 1;
-      state.commentsByPost.set(postId, await api.comments(postId));
-      refreshPostNode(postId);
-      toast('Comment added.');
-    } else {
-      toast('Sent to the admin for approval.');
-    }
+    await api.comment(postId, content, { asMember: !state.isAdmin });
+    if (post) post.comments += 1;
+    state.commentsByPost.set(postId, await api.comments(postId));
+    refreshPostNode(postId);
+    toast('Comment posted.');
     await loadStats();
   } catch (error) {
     toast(explain(error), true);
@@ -1637,7 +1641,7 @@ async function addComment(postId, content) {
 async function withdraw(kind, id, button) {
   button.disabled = true;
   try {
-    await api.withdraw(kind, id);
+    await api.withdraw(id);
     toast('Pulled back from the queue.');
     await Promise.all([loadPosts({ reset: true }), loadStats()]);
     renderProfile();
@@ -1765,7 +1769,7 @@ function attachCommentComposer(node, postId) {
   if (!state.isAdmin) {
     const hint = document.createElement('p');
     hint.className = 'field-hint';
-    hint.textContent = 'Your comment goes to the admin for approval before anyone else sees it.';
+    hint.textContent = 'Comments appear as soon as they are sent — no approval step. Once others can read it, only an admin can remove it, so keep it clean.';
     panel.appendChild(hint);
   }
   const form = document.createElement('form');

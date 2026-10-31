@@ -547,7 +547,7 @@ export const api = {
       // depend on PostgREST relationship inference to render at all.
       const [likes, comments] = await Promise.all([
         run(db.from('likes').select('post_id,user_id,taps').in('post_id', ids).limit(5000)),
-        run(approved(db.from('comments').select('post_id')).in('post_id', ids).limit(5000)),
+        run(db.from('comments').select('post_id').in('post_id', ids).limit(5000)),
       ]);
       (likes.data || []).forEach(like => {
         tapTotals.set(like.post_id, (tapTotals.get(like.post_id) || 0) + (like.taps || 1));
@@ -615,8 +615,8 @@ export const api = {
 
   comments: async (postId) => {
     const db = await client();
-    const result = await run(approved(db.from('comments')
-      .select('id,user_id,author,content,created_at,profiles(user_id,ign,avatar_url)'))
+    const result = await run(db.from('comments')
+      .select('id,user_id,author,content,created_at,profiles(user_id,ign,avatar_url)')
       .eq('post_id', postId)
       .order('created_at')
       .limit(100));
@@ -660,25 +660,27 @@ export const api = {
     const text = String(content ?? '').trim().slice(0, 300);
     if (text.length < 2) throw new Error('invalid_input');
     if (asMember || !(await isSiteAdmin(db))) assertCooldown('comments');
-    const result = await insertRow('comments', {
+    // Written straight in as published: a comment no longer waits for review, so the row appears
+    // the moment the thread reloads. The per-device pause above is what keeps it from being spam.
+    await run(db.from('comments').insert({
       post_id: postId,
       user_id: profile.user_id,
       author: profile.ign,
       content: text,
-    }, { asMember });
+      status: 'approved',
+    }));
     await logActivity('comment_submit', profile.ign);
-    return result;
+    return { status: 'approved' };
   },
 
-  // Deleting your own row while it is still waiting for review. A published post only an admin
-  // can take away, which is what the policy enforces.
-  async withdraw(kind, id) {
-    const table = { post: 'posts', comment: 'comments' }[kind];
-    if (!table || !id) throw new Error('invalid_input');
+  // Pulling back a post you sent a moment ago, before it is published. Comments are no longer
+  // queued, so they are not part of this.
+  async withdraw(id) {
+    if (!id) throw new Error('invalid_input');
     const db = await client();
     const uid = await currentUserId(db);
     if (!uid) throw new Error('sign_in_required');
-    const result = await run(db.from(table).delete().eq('id', id).eq('user_id', uid).eq('status', 'pending').select('id'));
+    const result = await run(db.from('posts').delete().eq('id', id).eq('user_id', uid).eq('status', 'pending').select('id'));
     if (!result.data?.length) throw new Error('cannot_withdraw');
     return { ok: true };
   },
@@ -691,7 +693,7 @@ export const api = {
     // paint for a number that is read at the same time as the others.
     const [posts, comments, teams, members, online] = await Promise.all([
       run(db.from('posts').select('id', { count: 'exact', head: true }).eq('status', 'approved')),
-      run(db.from('comments').select('id', { count: 'exact', head: true }).eq('status', 'approved')),
+      run(db.from('comments').select('id', { count: 'exact', head: true })),
       run(db.from('teams').select('id', { count: 'exact', head: true })),
       run(db.from('profiles').select('user_id', { count: 'exact', head: true })),
       run(db.from('profiles').select('user_id').gt('last_seen_at', cutoff).limit(500)),
@@ -909,31 +911,16 @@ export const api = {
   },
 
   /* ---------------- admin ---------------- */
+  // Only posts are queued now; comments publish as they are written, so there is nothing to read
+  // back here for them. Removing a comment is a plain delete from its thread, not a review step.
   async moderation() {
     const db = await client();
-    const [pendingPosts, pendingComments] = await Promise.all([
-      run(db.from('posts').select(`id,user_id,author,rank,category,content,image_url,video_url,created_at,profiles(user_id,ign,avatar_url)`)
-        .eq('status', 'pending').order('created_at').limit(100)),
-      run(db.from('comments').select('id,post_id,user_id,author,content,created_at,profiles(user_id,ign,avatar_url)')
-        .eq('status', 'pending').order('created_at').limit(100)),
-    ]);
-    const comments = pendingComments.data || [];
-    const parentIds = [...new Set(comments.map(entry => entry.post_id))];
-    const parents = new Map();
-    if (parentIds.length) {
-      const found = await run(db.from('posts').select('id,author,content').in('id', parentIds).limit(100));
-      (found.data || []).forEach(post => parents.set(post.id, post));
-    }
+    const pendingPosts = await run(db.from('posts')
+      .select(`id,user_id,author,rank,category,content,image_url,video_url,created_at,profiles(user_id,ign,avatar_url)`)
+      .eq('status', 'pending').order('created_at').limit(100));
     const named = (row) => row.profiles?.ign || row.author || 'Former member';
     return {
       posts: (pendingPosts.data || []).map(row => ({ ...row, author: named(row), avatar_url: row.profiles?.avatar_url || null })),
-      comments: comments.map(entry => ({
-        ...entry,
-        author: named(entry),
-        avatar_url: entry.profiles?.avatar_url || null,
-        post_author: parents.get(entry.post_id)?.author ?? '',
-        post_excerpt: String(parents.get(entry.post_id)?.content ?? '').slice(0, 90),
-      })),
     };
   },
 
