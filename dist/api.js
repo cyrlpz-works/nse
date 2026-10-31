@@ -712,7 +712,6 @@ export const api = {
       team.logo_url = media?.logo_url || null;
       team.banner_url = media?.banner_url || null;
       const mine = entries.filter(entry => entry.team_id === team.id);
-      const founder = { id: null, name: team.leader, role: 'Founder', user_id: null };
       const members = mine
         .filter(entry => entry.status === 'accepted')
         .map(entry => ({
@@ -723,7 +722,9 @@ export const api = {
           role: 'Member',
           user_id: entry.user_id,
         }));
-      team.members = [founder, ...members];
+      // A squad starts with nobody on it -- not even the admin who published it. Slots fill only
+      // when an application is accepted, so the roster count on the card is real membership.
+      team.members = members;
       // Pending applications are hidden by row level security from everyone except their
       // author, the team's captain and an admin, so an empty list is the normal answer.
       team.applicants = mine
@@ -843,11 +844,19 @@ export const api = {
   async assignCaptain(teamId, userId, nickname) {
     const db = await client();
     if (!(await isSiteAdmin(db))) throw new Error('admin_required');
+    const uid = await currentUserId(db);
     const result = await run(db.from('teams')
       .update({ captain_user_id: userId || null, captain_nick: userId ? clamp(nickname, 24) : null })
       .eq('id', teamId)
       .select('id'));
     if (!result.data?.length) throw new Error('not_found');
+    // Naming an applicant captain also accepts that person's own pending row: a captain who is
+    // still only asking to join is nonsense on the roster. The admin policy permits the write.
+    if (userId) {
+      await run(db.from('join_requests')
+        .update({ status: 'accepted', decided_by: uid, decided_at: new Date().toISOString() })
+        .eq('team_id', teamId).eq('user_id', userId).eq('status', 'pending'));
+    }
     await logActivity(userId ? 'captain_assign' : 'captain_remove', clamp(nickname, 24) || teamId);
     return { ok: true };
   },

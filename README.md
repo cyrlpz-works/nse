@@ -86,7 +86,7 @@ there are no error toasts.
 | --- | --- |
 | Home | stats, recruiting squads, the top five of the leaderboard, who is online, latest posts |
 | Feed | the composer (text, screenshot, YouTube link) and every approved post |
-| Squads | squad cards, filters, the squad page with its roster, applications and its own logo and banner |
+| Squads | squad cards, filters, the squad page with its roster, applications and its own logo and banner. A squad starts empty — every slot is open until an application is accepted |
 | Members | every account, searchable by IGN; tap a card for that player's profile |
 | Ranks | the points leaderboard |
 | Profile | your own account: face, IGN, rank and points, mode and role, standing, groups |
@@ -115,11 +115,11 @@ second community**.
 | Delete a post (queued or published) | its author while queued; the admin any time | RLS: `posts` delete policies |
 | Heart a post or a member several times | anyone signed in, once per account per target | `likes (post_id, user_id)` and `member_hearts (from_user_id, to_user_id)` are unique; a `taps` counter grows |
 | Publish, edit or remove a squad | the site admin only | RLS: `teams` writes require `is_site_admin()` |
-| Accept, decline, remove or name a roster row | that squad's captain | RLS: `is_captain_of(team_id)` + `decided_by = auth.uid()` |
+| Accept, decline, remove or name a roster row | that squad's captain, or the site admin | RLS: `is_captain_of(team_id)` + `decided_by = auth.uid()`, plus `joins admin write` for the admin |
 | Set a squad's logo and banner | that squad's captain, or the admin | RLS: `team_media` writes require `is_captain_of(team_id)`; the `team-media` bucket folder is the squad id |
 | Leave a squad you are in | you | RLS: `joins own leave` narrows it to your own accepted row |
 | Join a squad | you, if your profile's rank reaches its minimum | RLS: `joins apply` compares `rank_position(profiles.rank)` with `teams.required_rank` |
-| Name a squad's captain | the site admin | RLS: it is a `teams` update |
+| Name a squad's captain | the site admin | RLS: it is a `teams` update; naming an applicant also accepts that applicant's own pending row |
 | Add someone to `site_admins` | an existing site admin | RLS: `admins admin only` |
 | Read the activity log | the site admin | RLS: `activity_log` is admin-readable, member-insertable |
 

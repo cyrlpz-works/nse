@@ -846,7 +846,7 @@ function renderTeamDetail(teamId) {
       ${teamLogoMarkup(team)}
       <div class="panel-head-text">
         <h2 id="teamDetailName">${esc(team.name)}</h2>
-        <p>${team.captain_nick ? `Captain: <strong style="color:var(--text)">${esc(team.captain_nick)}</strong>` : `Led by ${esc(team.leader)}`}</p>
+        <p>${team.captain_nick ? `Captain: <strong style="color:var(--text)">${esc(team.captain_nick)}</strong>` : 'No captain yet'}</p>
       </div>
       <span class="badge ${recruiting ? 'ok' : 'warn'}">${recruiting ? 'Recruiting' : 'Full roster'}</span>
     </div>
@@ -864,6 +864,7 @@ function renderTeamDetail(teamId) {
       </div>
       <div class="divider"></div>
       <h3 class="panel-sub">Roster</h3>
+      ${roster.length ? '' : '<p class="field-hint">No players yet. Every slot below is open until an application is accepted.</p>'}
       <div class="roster">
         ${Array.from({ length: slots }, (_, i) => {
           const entry = roster[i];
@@ -887,7 +888,9 @@ function renderTeamDetail(teamId) {
       <p class="field-hint">${recruiting
         ? `${isSignedIn()
           ? (qualifies
-            ? `You meet the ${esc(team.required_rank)} minimum. This squad’s captain decides who gets in${isCaptainHere ? ' — that is you' : ''}.`
+            ? `You meet the ${esc(team.required_rank)} minimum. ${team.captain_nick
+              ? `This squad’s captain decides who gets in${isCaptainHere ? ' — that is you' : ''}.`
+              : 'No captain is set yet, so the site admin decides who gets in.'}`
             : `This squad needs ${esc(team.required_rank)} and your profile says ${esc(myRank)}. Set your real rank on the Profile page to apply.`)
           : 'Sign in with your own account to apply — the squad needs to know who is asking.'}
           ${iAmIn ? 'You are already on this roster.' : ''}`
@@ -898,7 +901,9 @@ function renderTeamDetail(teamId) {
       ${manages ? `
         <div class="divider"></div>
         <h3 class="panel-sub">Roster decisions${state.isAdmin && !isCaptainHere ? ' (admin)' : ''}</h3>
-        <p class="field-hint">Only ${team.captain_nick ? esc(team.captain_nick) : 'this squad’s captain'} and the site admin can change this roster. Another squad’s captain sees none of these controls.</p>
+        <p class="field-hint">${team.captain_nick
+          ? `Only ${esc(team.captain_nick)} and the site admin can change this roster. Another squad’s captain sees none of these controls.`
+          : 'No captain is set yet, so you are deciding this roster as the site admin. Naming a captain below hands it over.'}</p>
         ${applicants.length ? applicants.map(entry => `
           <div class="queue-item">
             <div class="queue-text">
@@ -948,7 +953,9 @@ function renderTeamDetail(teamId) {
                 ${current ? 'disabled' : ''}>${current ? 'Current captain' : 'Make captain'}</button>
             </div>
           </div>`;
-        }).join('') : '<p class="field-hint">Nobody on this roster or in its applications has a linked account yet.</p>'}
+        }).join('') : `<p class="field-hint">${roster.length || applicants.length
+          ? 'Nobody on this roster or in its applications has a linked account yet.'
+          : 'Nobody has applied yet. When someone does, they appear in the decisions list above and you can name one of them captain here.'}</p>`}
 
         <div class="divider"></div>
         <h3 class="panel-sub">Delete this squad</h3>
