@@ -32,6 +32,11 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Author rules like `.btn { display: inline-flex }` outrank the browser's own
+   `[hidden] { display: none }`, so a hidden control stayed on screen and a visitor
+   could click a button that only ever answers "sign in as the site admin". */
+[hidden] { display: none !important; }
+
 html { scroll-behavior: smooth; }
 
 body {
