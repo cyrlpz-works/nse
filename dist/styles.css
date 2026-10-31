@@ -820,16 +820,22 @@ dialog::backdrop { background: rgba(4, 4, 7, 0.72); backdrop-filter: blur(3px); 
   .split { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 760px) {
+/* The header needs its second row long before the rest of the page does: the brand, the tabs and
+   the account tools only share one line above ~1100px, and under that the tools were pushed clean
+   off the right edge, so the whole page scrolled sideways and Sign in was unreachable. */
+@media (max-width: 1100px) {
   .header-inner { flex-wrap: wrap; gap: 0.6rem 0.85rem; min-height: 60px; padding-block: 0.6rem; }
-  /* The tagline is what pushed the brand and the account tools onto separate rows, which made the
-     sticky header three lines tall on a phone. TRIAS, the hero and the footer still carry it. */
+  /* Dropping the tagline is what keeps the brand and the tools on one line instead of three rows.
+     TRIAS, the hero and the footer still carry it. */
   .brand-text span { display: none; }
   .nav { order: 3; width: 100%; margin-left: 0; overflow-x: auto; padding-bottom: 0.15rem; scrollbar-width: none; }
   .nav::-webkit-scrollbar { display: none; }
   .header-tools { order: 2; margin-left: auto; gap: 0.5rem; }
   .header-user { margin-left: 0; padding-left: 0; border-left: 0; }
   .header-user-meta { display: none; }
+}
+
+@media (max-width: 760px) {
   .panel-head { margin-top: -34px; padding: 0 1rem; }
   .panel-head .avatar { width: 70px; height: 70px; font-size: 1.5rem; }
   .panel-body { padding: 1.15rem 1rem; }
