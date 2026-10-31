@@ -2,6 +2,11 @@
 /* Theme: black / white / hot pink */
 
 :root {
+  /* Tells the browser this page is a dark surface, so the pieces we do not paint -- the
+     dropdown list of a <select>, native scrollbars, the date picker -- render dark too
+     instead of dropping a light system panel in the middle of the site. */
+  color-scheme: dark;
+
   --bg: #08080b;
   --bg-elev: #101015;
   --bg-soft: #17171f;
@@ -482,6 +487,20 @@ main { padding-block: clamp(1.75rem, 4vw, 3.25rem) 4rem; }
 }
 .input::placeholder, .textarea::placeholder { color: var(--dim); }
 .input:focus, .textarea:focus { outline: none; border-color: var(--pink); box-shadow: 0 0 0 3px rgba(255, 45, 120, 0.16); }
+/* A remembered value gets its own light fill and dark text from the browser, and that paint
+   beats our `background` -- the squad name and tag turned into pale boxes in a black dialog.
+   The only reliable override is to declare the change we never want to see, so slowly that it
+   never happens. `-webkit-text-fill-color` is separate from `color` for the same reason. */
+.input:-webkit-autofill,
+.textarea:-webkit-autofill,
+.input:-webkit-autofill:hover,
+.textarea:-webkit-autofill:hover,
+.input:-webkit-autofill:focus,
+.textarea:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  transition: background-color 999999s ease-in-out 0s;
+}
 .textarea { min-height: 96px; resize: vertical; line-height: 1.55; }
 
 .select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
@@ -532,6 +551,10 @@ main { padding-block: clamp(1.75rem, 4vw, 3.25rem) 4rem; }
   background-image: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 12px);
   opacity: 0.5;
 }
+/* A squad's own banner (dist/app.js paints it) replaces the gradient, so it needs the sizing the
+   gradient got for free, and the diagonal stripes are quietened to keep a picture readable. */
+.banner.has-artwork { background-size: cover; background-position: center 32%; }
+.banner.has-artwork::after { opacity: 0.14; }
 .panel {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
