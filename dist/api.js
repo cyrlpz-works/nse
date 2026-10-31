@@ -103,11 +103,14 @@ async function isSiteAdmin(db) {
 const clamp = (value, max) => String(value ?? '').trim().slice(0, max);
 
 // Visitors queue content for review; only a listed site admin publishes straight to the feed.
+// The row is inserted without asking the API to echo it back: a queued row is deliberately
+// invisible to its anonymous author, and PostgREST reports an invisible RETURNING as an RLS
+// violation -- which looked exactly like a visitor being refused permission to post at all.
 async function insertRow(table, row) {
   const db = await client();
   const status = await isSiteAdmin(db) ? 'approved' : 'pending';
-  const result = await run(db.from(table).insert({ ...row, status }).select('id,status'));
-  return result.data?.[0] ?? { status };
+  await run(db.from(table).insert({ ...row, status }));
+  return { status };
 }
 
 // A per-device pause keeps one browser from burying the admin in duplicate submissions.
@@ -347,15 +350,15 @@ export const api = {
   },
 
   // Applying is open to any visitor. A signed-in applicant records their account so the row
-  // stays theirs even from another device, and so a captain can name them later.
+  // stays theirs even from another device, and so a captain can name them later. No row is read
+  // back: an anonymous application is not visible to the one who sent it.
   async joinTeam(teamId, nickname) {
     const db = await client();
     const uid = await currentUserId(db);
     try {
-      const result = await run(db.from('join_requests')
-        .insert({ team_id: teamId, visitor_id: getVisitorId(), user_id: uid, nickname: clamp(nickname, 24) })
-        .select('id'));
-      return { duplicated: false, id: result.data?.[0]?.id };
+      await run(db.from('join_requests')
+        .insert({ team_id: teamId, visitor_id: getVisitorId(), user_id: uid, nickname: clamp(nickname, 24) }));
+      return { duplicated: false };
     } catch (error) {
       if (error.pgCode === '23505') return { duplicated: true };
       throw error;
