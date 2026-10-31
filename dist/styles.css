@@ -185,17 +185,28 @@ a:hover { text-decoration: underline; }
 }
 .nav-link[aria-current='page'] .nav-count { background: rgba(0, 0, 0, 0.32); }
 
+/* The one button in the header that carries no `.btn` class, so nothing else reset its
+   background: the browser painted its own light grey chip behind white text and the name
+   disappeared. `border: 0` first, then the separator, so only that one edge is drawn. */
 .header-user {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding-left: 1.1rem;
+  padding: 0.3rem 0.4rem 0.3rem 1.1rem;
   margin-left: 0.35rem;
+  border: 0;
   border-left: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 12px;
+  text-align: left;
+  transition: background 0.2s ease;
 }
+.header-user:hover { background: rgba(255, 255, 255, 0.06); }
 .header-user .avatar { width: 34px; height: 34px; border-radius: 10px; font-size: 0.95rem; }
 .header-user-meta { line-height: 1.25; }
-.header-user-meta b { display: block; font-size: 0.82rem; font-weight: 700; }
+.header-user-meta b { display: block; font-size: 0.82rem; font-weight: 700; color: var(--text); }
 .header-user-meta small { display: block; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pink-bright); }
 
 /* ---------------- Avatar / badge ---------------- */
