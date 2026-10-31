@@ -139,7 +139,7 @@ const mediaUrl = (value) => {
   return text ? (HTTPS_URL.test(text) ? text : null) : null;
 };
 
-const PROFILE_FIELDS = 'user_id,ign,avatar_url,rank,rank_points,main_mode,role_label,clan_main,clan_second,community_main,community_second,standing,exec_position,last_seen_at,created_at,updated_at';
+const PROFILE_FIELDS = 'user_id,ign,avatar_url,rank,rank_points,mp_rank,mp_points,br_rank,br_points,main_mode,role_label,clan_main,clan_second,community_main,community_second,standing,exec_position,last_seen_at,created_at,updated_at';
 
 async function readProfile(db, uid) {
   if (!uid) return null;
@@ -275,7 +275,6 @@ export const api = {
     const ign = clamp(patch.ign, 24);
     if (ign.length < 2) throw new Error('invalid_input');
 
-    const rank = oneOf(patch.rank, RANK_TIERS, 'Unranked');
     const mainMode = oneOf(patch.mainMode, ['Multiplayer', 'Battle Royale']);
     const roles = mainMode === 'Battle Royale' ? BR_CLASSES : MP_ROLES;
     // Switching mode drops a role that belongs to the other list rather than sending a pair the
@@ -284,16 +283,28 @@ export const api = {
     const standing = oneOf(patch.standing, ['member', 'executive'], 'member');
     const execPosition = standing === 'executive' ? oneOf(patch.execPosition, EXEC_POSITIONS) : null;
     if (standing === 'executive' && !execPosition) throw new Error('invalid_input');
-    const points = patch.rankPoints === null || patch.rankPoints === undefined || patch.rankPoints === ''
-      ? null : Math.min(1000000, Math.max(0, Math.round(Number(patch.rankPoints))));
-    if (rank === 'Legendary' && points === null) throw new Error('legendary_points');
-    if (points !== null && !Number.isFinite(Number(patch.rankPoints))) throw new Error('invalid_input');
+
+    // One ladder per mode. An empty choice means "I do not play this mode" and is stored as null,
+    // which is what keeps the other mode's board from listing someone who never queued for it.
+    const ladder = (rankValue, pointsValue) => {
+      const tier = oneOf(rankValue, RANK_TIERS);
+      const blank = pointsValue === null || pointsValue === undefined || pointsValue === '';
+      const points = blank ? null : Math.round(Number(pointsValue));
+      if (!blank && !Number.isFinite(points)) throw new Error('invalid_input');
+      if (!tier && points !== null) throw new Error('mode_points_without_rank');
+      if (tier === 'Legendary' && points === null) throw new Error('legendary_points');
+      return { rank: tier, points: points === null ? null : Math.min(1000000, Math.max(0, points)) };
+    };
+    const mp = ladder(patch.mpRank, patch.mpPoints);
+    const br = ladder(patch.brRank, patch.brPoints);
 
     const row = {
       user_id: uid,
       ign,
-      rank,
-      rank_points: points,
+      mp_rank: mp.rank,
+      mp_points: mp.points,
+      br_rank: br.rank,
+      br_points: br.points,
       main_mode: mainMode,
       role_label: roleLabel,
       standing,
@@ -694,13 +705,19 @@ export const api = {
     };
   },
 
-  // The leaderboard: rank points decide it, and the tier is shown so a Master with no points is
-  // not sorted above a Legendary by accident.
-  async leaderboard() {
+  // One board per mode. The selected mode's pair is aliased back to `rank`/`rank_points`, so the
+  // table, the home strip and the member cards all read the same shape whichever ladder is shown.
+  // Members with no points in that mode are left out -- otherwise every BR board would open with
+  // everyone who has never played BR.
+  async leaderboard(mode = 'Multiplayer') {
     const db = await client();
+    const br = mode === 'Battle Royale';
+    const tier = br ? 'br_rank' : 'mp_rank';
+    const points = br ? 'br_points' : 'mp_points';
     const found = await run(db.from('profiles')
-      .select('user_id,ign,avatar_url,rank,rank_points,main_mode,role_label,standing,exec_position')
-      .order('rank_points', { ascending: false, nullsFirst: false })
+      .select(`user_id,ign,avatar_url,main_mode,role_label,standing,exec_position,rank:${tier},rank_points:${points}`)
+      .not(points, 'is', null)
+      .order(points, { ascending: false })
       .order('ign')
       .limit(100));
     const rows = found.data || [];

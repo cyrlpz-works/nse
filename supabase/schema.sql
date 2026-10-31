@@ -62,6 +62,16 @@ create table if not exists public.profiles (
     check (rank in ('Unranked', 'Rookie', 'Veteran', 'Elite', 'Pro', 'Master',
                     'Grand Master', 'Legendary')),
   rank_points integer check (rank_points is null or rank_points between 0 and 1000000),
+  -- One ranked entry per mode: a player's Battle Royale standing has nothing to do with their
+  -- Multiplayer standing, and a mode they do not play stays null instead of pretending to be
+  -- Unranked. `rank`/`rank_points` above stay as the "current" pair the header, the post badge
+  -- and the squad rank rule read; a trigger keeps them equal to the row's main mode.
+  mp_rank text check (mp_rank is null or mp_rank in ('Unranked', 'Rookie', 'Veteran', 'Elite',
+                                                    'Pro', 'Master', 'Grand Master', 'Legendary')),
+  mp_points integer check (mp_points is null or mp_points between 0 and 1000000),
+  br_rank text check (br_rank is null or br_rank in ('Unranked', 'Rookie', 'Veteran', 'Elite',
+                                                    'Pro', 'Master', 'Grand Master', 'Legendary')),
+  br_points integer check (br_points is null or br_points between 0 and 1000000),
   main_mode text check (main_mode is null or main_mode in ('Multiplayer', 'Battle Royale')),
   -- The role must belong to the mode it was picked under: five multiplayer roles, the 31 BR classes.
   role_label text check (
@@ -93,10 +103,13 @@ create table if not exists public.profiles (
   -- An executive has to say which position; a Legendary has to say their points, or the
   -- leaderboard would rank them on nothing.
   constraint profiles_executive_has_position check (standing <> 'executive' or exec_position is not null),
-  constraint profiles_legendary_has_points check (rank <> 'Legendary' or rank_points is not null)
+  constraint profiles_legendary_has_points check (rank <> 'Legendary' or rank_points is not null),
+  constraint profiles_mp_legendary_points check (mp_rank is distinct from 'Legendary' or mp_points is not null),
+  constraint profiles_br_legendary_points check (br_rank is distinct from 'Legendary' or br_points is not null)
 );
 create index if not exists profiles_ign_idx on public.profiles (lower(ign) text_pattern_ops);
-create index if not exists profiles_leaderboard_idx on public.profiles (rank_points desc nulls last, ign);
+-- The two per-mode ladder indexes are created further down, after the migration above has made
+-- sure those columns exist on a project that predates them.
 create index if not exists profiles_seen_idx on public.profiles (last_seen_at desc);
 
 create table if not exists public.posts (
@@ -256,6 +269,67 @@ alter table public.likes add column if not exists taps integer not null default 
 -- The tap counter writes this column on every heart, and a table that predates the CREATE TABLE
 -- body above never got it: without it the update is rejected and a tap can never go past one.
 alter table public.likes add column if not exists updated_at timestamptz not null default now();
+
+-- The ladder used to be one rank and one point total for both modes. It is now kept apart: the old
+-- row moves into the pair that matches its main mode, and a trigger keeps the single `rank` pair
+-- equal to the main mode after every save. `rank` itself is not dropped, because two join policies
+-- read it and must keep doing so.
+alter table public.profiles add column if not exists mp_rank text;
+alter table public.profiles add column if not exists mp_points integer;
+alter table public.profiles add column if not exists br_rank text;
+alter table public.profiles add column if not exists br_points integer;
+
+-- Rows written before this section existed had only the single pair. Copying it into the main
+-- mode's pair is a no-op on a re-run, because those four columns are then no longer all empty.
+update public.profiles set
+  mp_rank = case when main_mode = 'Battle Royale' then mp_rank else rank end,
+  mp_points = case when main_mode = 'Battle Royale' then mp_points else rank_points end,
+  br_rank = case when main_mode = 'Battle Royale' then rank else br_rank end,
+  br_points = case when main_mode = 'Battle Royale' then rank_points else br_points end
+where mp_rank is null and br_rank is null and mp_points is null and br_points is null;
+
+-- The header, the post badge and the join rule read `rank`, so it is derived here rather than
+-- written by the site: one save cannot leave the two views saying different things.
+create or replace function public.profiles_sync_rank() returns trigger
+language plpgsql as $$
+begin
+  new.rank := coalesce(
+    case new.main_mode when 'Battle Royale' then new.br_rank else new.mp_rank end, 'Unranked');
+  new.rank_points :=
+    case new.main_mode when 'Battle Royale' then new.br_points else new.mp_points end;
+  return new;
+end;
+$$;
+drop trigger if exists profiles_sync_rank on public.profiles;
+create trigger profiles_sync_rank before insert or update on public.profiles
+  for each row execute function public.profiles_sync_rank();
+
+-- Postgres has no "add constraint if not exists", so each is replaced by name the same way the
+-- checks further down do it: the CREATE TABLE body above never runs on a live table.
+alter table public.profiles drop constraint if exists profiles_mp_rank_check;
+alter table public.profiles drop constraint if exists profiles_mp_points_check;
+alter table public.profiles drop constraint if exists profiles_br_rank_check;
+alter table public.profiles drop constraint if exists profiles_br_points_check;
+alter table public.profiles drop constraint if exists profiles_mp_legendary_points;
+alter table public.profiles drop constraint if exists profiles_br_legendary_points;
+alter table public.profiles add constraint profiles_mp_rank_check check (
+  mp_rank is null or mp_rank in ('Unranked', 'Rookie', 'Veteran', 'Elite', 'Pro', 'Master',
+                                 'Grand Master', 'Legendary'));
+alter table public.profiles add constraint profiles_mp_points_check check (
+  mp_points is null or mp_points between 0 and 1000000);
+alter table public.profiles add constraint profiles_br_rank_check check (
+  br_rank is null or br_rank in ('Unranked', 'Rookie', 'Veteran', 'Elite', 'Pro', 'Master',
+                                 'Grand Master', 'Legendary'));
+alter table public.profiles add constraint profiles_br_points_check check (
+  br_points is null or br_points between 0 and 1000000);
+alter table public.profiles add constraint profiles_mp_legendary_points check (
+  mp_rank is distinct from 'Legendary' or mp_points is not null);
+alter table public.profiles add constraint profiles_br_legendary_points check (
+  br_rank is distinct from 'Legendary' or br_points is not null);
+
+drop index if exists public.profiles_leaderboard_idx;
+create index if not exists profiles_mp_points_idx on public.profiles (mp_points desc nulls last, ign);
+create index if not exists profiles_br_points_idx on public.profiles (br_points desc nulls last, ign);
 
 alter table public.teams add column if not exists captain_user_id uuid;
 alter table public.teams add column if not exists captain_nick text

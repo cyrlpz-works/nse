@@ -3,7 +3,7 @@
 import {
   api, isConfigured, signIn, signUpAccount, signOutAsAdmin, hasAdminSession, myUserId, myProfile,
   RANK_TIERS, MP_ROLES, BR_CLASSES, EXEC_POSITIONS, CATEGORIES, youTubeId,
-} from './api.js?v=2026-10-31-11';
+} from './api.js?v=2026-10-31-12';
 
 // The ladder has no subdivisions any more: a tier is the whole rank, and a Legendary carries the
 // points that place them on the leaderboard.
@@ -34,6 +34,8 @@ const state = {
   memberSearch: '',
   adminSearch: '',
   leaderboard: [],
+  // Which ladder the leaderboard shows. Points are kept per mode, so the board is too.
+  rankMode: 'Multiplayer',
   members: [],
   openComments: new Set(),
   commentsByPost: new Map(),
@@ -137,6 +139,7 @@ const ERRORS = {
   cannot_withdraw: 'Only your own queued post can be pulled back. Once it is published, ask the admin.',
   heart_self: 'You cannot heart your own profile.',
   legendary_points: 'Legendary needs your ranked points, or the leaderboard has nothing to place you by.',
+  mode_points_without_rank: 'That mode has points but no rank. Pick a rank for it, or clear its points.',
   video_not_youtube: 'Only a YouTube link works here — youtube.com/watch?v=… or youtu.be/…',
   image_too_large: 'That image is too big. Use a screenshot under 8 MB.',
   upload_failed: 'The image could not be uploaded. Try again, or continue without it.',
@@ -161,8 +164,28 @@ const explain = (error) => {
 
 const rankLine = (profile) => {
   if (!profile) return 'Unranked';
+  const tag = profile.main_mode === 'Battle Royale' ? 'BR' : profile.main_mode ? 'MP' : '';
   const points = Number.isFinite(Number(profile.rank_points)) ? ` · ${Number(profile.rank_points).toLocaleString()} pts` : '';
-  return `${profile.rank || 'Unranked'}${points}`;
+  return `${tag ? `${tag} · ` : ''}${profile.rank || 'Unranked'}${points}`;
+};
+// A member keeps a separate ladder per mode, so a card says which one each number belongs to.
+const ladderLine = (profile, mode) => {
+  const br = mode === 'br';
+  const rank = (br ? profile?.br_rank : profile?.mp_rank) || null;
+  const points = br ? profile?.br_points : profile?.mp_points;
+  const tag = br ? 'BR' : 'MP';
+  if (!rank) return `${tag} not set`;
+  return `${tag} ${rank}${points === null || points === undefined ? '' : ` · ${Number(points).toLocaleString()} pts`}`;
+};
+const hasLadder = (profile, mode) => {
+  const br = mode === 'br';
+  const rank = br ? profile?.br_rank : profile?.mp_rank;
+  const points = br ? profile?.br_points : profile?.mp_points;
+  return Boolean(rank) || (points !== null && points !== undefined);
+};
+const ladderLines = (profile) => {
+  const lines = ['mp', 'br'].filter(mode => hasLadder(profile, mode)).map(mode => ladderLine(profile, mode));
+  return lines.length ? lines : ['no rank set'];
 };
 const roleLine = (profile) => {
   if (!profile?.main_mode) return 'No main mode yet';
@@ -629,7 +652,7 @@ async function renderAdminConsole() {
         row.className = 'table-row';
         row.innerHTML = `
           <button class="link-like table-cell" type="button" data-member="${esc(person.user_id)}">${avatarMarkup(person)} ${esc(person.ign)}</button>
-          <span class="table-cell">${esc(person.rank)}${person.rank_points ? ` · ${Number(person.rank_points).toLocaleString()} pts` : ''}</span>
+          <span class="table-cell">${esc(ladderLines(person).join(' · '))}</span>
           <span class="table-cell">${esc(standingLine(person))}</span>
           <span class="table-cell">${person.online ? '<em class="ok">online</em>' : esc(timeAgo(person.last_seen_at))}</span>`;
         membersHost.appendChild(row);
@@ -699,7 +722,7 @@ function memberCardMarkup(person) {
       <span class="online-dot${person.online ? ' is-online' : ''}" title="${person.online ? 'online now' : 'seen ' + timeAgo(person.last_seen_at)}"></span>
     </span>
     <b class="member-name">${esc(person.ign)}</b>
-    <span class="badge pink">${esc(person.rank)}${person.rank_points ? ` · ${Number(person.rank_points).toLocaleString()}` : ''}</span>
+    ${ladderLines(person).map(line => `<span class="badge pink">${esc(line)}</span>`).join('')}
     <span class="member-sub">${esc(roleLine(person))}</span>
     <span class="member-sub">${esc(standingLine(person))}</span>
     ${person.clan_main || person.community_main ? `
@@ -755,7 +778,8 @@ async function openMemberDialog(userId) {
         </div>
       </div>
       <div class="member-facts">
-        <div><b>${esc(person.rank)}</b><small>rank${person.rank_points ? ` · ${Number(person.rank_points).toLocaleString()} pts` : ' · no points yet'}</small></div>
+        <div><b>${esc(person.mp_rank || '—')}</b><small>MP rank${person.mp_points === null || person.mp_points === undefined ? '' : ` · ${Number(person.mp_points).toLocaleString()} pts`}</small></div>
+        <div><b>${esc(person.br_rank || '—')}</b><small>BR rank${person.br_points === null || person.br_points === undefined ? '' : ` · ${Number(person.br_points).toLocaleString()} pts`}</small></div>
         <div><b>${esc(person.main_mode || '—')}</b><small>main mode</small></div>
         <div><b>${esc(person.role_label || 'no role yet')}</b><small>${esc(person.main_mode === 'Battle Royale' ? 'class' : 'role')}</small></div>
         ${person.standing === 'executive' ? `<div><b>${esc(person.exec_position || '—')}</b><small>position in the clan</small></div>` : ''}
@@ -788,11 +812,11 @@ function renderLeaderboard() {
   const host = $('rankList');
   host.replaceChildren();
   if (!state.leaderboard.length) {
-    host.appendChild(emptyBlock('Nobody has saved a profile with points yet, so the ladder is empty. Set your rank on the Profile page.'));
+    host.appendChild(emptyBlock(`Nobody has saved ${state.rankMode} points yet, so this ladder is empty. Set your ranks on the Profile page.`));
     $('ranksCount').textContent = '';
     return;
   }
-  $('ranksCount').textContent = `${state.leaderboard.length} ranked members`;
+  $('ranksCount').textContent = `${state.leaderboard.length} ranked · ${state.rankMode}`;
   const head = document.createElement('div');
   head.className = 'table-head rank-head';
   head.innerHTML = '<span>#</span><span>Member</span><span>Tier</span><span>Points</span><span>Role</span>';
@@ -805,7 +829,7 @@ function renderLeaderboard() {
       <button class="link-like table-cell" type="button" data-member="${esc(entry.user_id)}">
         ${avatarMarkup(entry)} ${esc(entry.ign)}
       </button>
-      <span class="table-cell">${esc(entry.rank)}</span>
+      <span class="table-cell">${esc(entry.rank || 'Unranked')}</span>
       <span class="table-cell points">${entry.rank_points ? Number(entry.rank_points).toLocaleString() : '—'}</span>
       <span class="table-cell">${esc(entry.role_label || entry.main_mode || '—')}</span>`;
     host.appendChild(row);
@@ -1106,8 +1130,8 @@ function renderProfile() {
       ${avatarMarkup(p, 'xl')}
       <div class="panel-head-text">
         <h2 id="profile-name">${esc(p.ign)}</h2>
-        <p>${esc(rankLine(p))} · ${esc(roleLine(p))}</p>
-        <p class="member-tag">${esc(standingLine(p))}</p>
+        <p>${ladderLines(p).map(esc).join(' · ')}</p>
+        <p class="member-tag">${esc(standingLine(p))} · ${esc(roleLine(p))}</p>
       </div>
       <button class="btn btn-ghost btn-sm" type="button" id="editProfile">Edit profile</button>
     </div>
@@ -1134,9 +1158,10 @@ function renderProfile() {
       </div>
       <div class="divider"></div>
       <h3 class="panel-sub">Ranked ladder</h3>
+      <p class="field-hint" style="margin:0 0 .5rem">${ladderLines(p).map(esc).join(' · ')}</p>
       <div class="ladder">
         ${RANK_TIERS.map(tier => `
-          <div class="ladder-row${tier === p.rank ? ' is-current' : ''}">
+          <div class="ladder-row${tier === p.mp_rank || tier === p.br_rank ? ' is-current' : ''}">
             <b>${esc(tier)}</b>
             <span>${esc(RANK_RP[tier] || '')}</span>
           </div>`).join('')}
@@ -1193,17 +1218,31 @@ function profileFormMarkup(p) {
       </div>
       <div class="field-row">
         <div class="field">
-          <label for="pfRank">Current rank tier</label>
-          ${selectMarkup('pfRank', RANK_TIERS, p?.rank || 'Unranked')}
-          <p class="field-hint" id="rankHint"></p>
+          <label for="pfMpRank">Multiplayer rank</label>
+          ${selectMarkup('pfMpRank', RANK_TIERS, p?.mp_rank, 'Not played')}
+          <p class="field-hint" id="mpRankHint"></p>
         </div>
         <div class="field">
-          <label for="pfPoints">Ranked points</label>
-          <input class="input" id="pfPoints" type="number" min="0" max="1000000" step="1"
-            value="${p?.rank_points ?? ''}" placeholder="e.g. 8420">
-          <p class="field-hint">Needed for Legendary — it is what the leaderboard sorts by.</p>
+          <label for="pfMpPoints">Multiplayer points</label>
+          <input class="input" id="pfMpPoints" type="number" min="0" max="1000000" step="1"
+            value="${p?.mp_points ?? ''}" placeholder="e.g. 8420">
         </div>
       </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="pfBrRank">Battle Royale rank</label>
+          ${selectMarkup('pfBrRank', RANK_TIERS, p?.br_rank, 'Not played')}
+          <p class="field-hint" id="brRankHint"></p>
+        </div>
+        <div class="field">
+          <label for="pfBrPoints">Battle Royale points</label>
+          <input class="input" id="pfBrPoints" type="number" min="0" max="1000000" step="1"
+            value="${p?.br_points ?? ''}" placeholder="e.g. 5100">
+        </div>
+      </div>
+      <p class="field-hint" style="margin-top:-.4rem">Each mode is a separate ladder, and the leaderboard
+        has a board for each. Leave a mode at “Not played” if you never queue for it; Legendary needs
+        its points.</p>
       <div class="field-row">
         <div class="field">
           <label for="pfMode">Main mode</label>
@@ -1269,14 +1308,20 @@ function attachProfileForm(form) {
   let avatarUrl = state.profile?.avatar_url || null;
   let pendingAvatar = null;
 
-  const rankSelect = form.querySelector('#pfRank');
-  const hint = form.querySelector('#rankHint');
-  const syncRankHint = () => {
-    const tier = rankSelect.value;
-    hint.textContent = `${tier}: ${RANK_RP[tier] || ''}. ${tier === 'Legendary' ? 'Points are required.' : 'Points are optional unless you want the leaderboard.'}`;
+  const wireRankHint = (selectId, hintId) => {
+    const select = form.querySelector(`#${selectId}`);
+    const hint = form.querySelector(`#${hintId}`);
+    const sync = () => {
+      const tier = select.value;
+      hint.textContent = tier
+        ? `${tier}: ${RANK_RP[tier] || ''}. ${tier === 'Legendary' ? 'Points are required.' : 'Points are optional, but they are what the board sorts by.'}`
+        : 'Leave this at “Not played” if you never queue for this mode.';
+    };
+    select.addEventListener('change', sync);
+    sync();
   };
-  rankSelect.addEventListener('change', syncRankHint);
-  syncRankHint();
+  wireRankHint('pfMpRank', 'mpRankHint');
+  wireRankHint('pfBrRank', 'brRankHint');
 
   const modeSelect = form.querySelector('#pfMode');
   const syncMode = () => syncRoleSelect(modeSelect.value, form.querySelector('#pfRole')?.value);
@@ -1340,8 +1385,10 @@ function attachProfileForm(form) {
       }
       const saved = await api.saveProfile({
         ign: form.querySelector('#pfIgn').value,
-        rank: rankSelect.value,
-        rankPoints: form.querySelector('#pfPoints').value,
+        mpRank: form.querySelector('#pfMpRank').value,
+        mpPoints: form.querySelector('#pfMpPoints').value,
+        brRank: form.querySelector('#pfBrRank').value,
+        brPoints: form.querySelector('#pfBrPoints').value,
         mainMode: modeSelect.value,
         roleLabel: form.querySelector('#pfRole')?.value,
         standing: standingSelect.value,
@@ -1435,7 +1482,7 @@ async function loadMembers() {
 }
 
 async function loadLeaderboard() {
-  try { state.leaderboard = await api.leaderboard(); }
+  try { state.leaderboard = await api.leaderboard(state.rankMode); }
   catch (error) { state.leaderboard = []; noteOffline(error); }
 }
 
@@ -1956,6 +2003,15 @@ function bindEvents() {
   $('feedSort').addEventListener('change', (event) => { state.sort = event.target.value; renderFeed(); });
   $('teamSearch').addEventListener('input', (event) => { state.teamSearch = event.target.value; renderTeamGrid(); });
   $('teamModeFilter').addEventListener('change', (event) => { state.teamMode = event.target.value; renderTeamGrid(); });
+  $('rankModeFilter').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-rank-mode]');
+    if (!button || button.dataset.rankMode === state.rankMode) return;
+    state.rankMode = button.dataset.rankMode;
+    $('rankModeFilter').querySelectorAll('[data-rank-mode]').forEach(node =>
+      node.setAttribute('aria-pressed', String(node === button)));
+    await loadLeaderboard();
+    renderLeaderboard();
+  });
   $('memberSearch').addEventListener('input', (event) => { state.memberSearch = event.target.value; renderMembers(); });
   $('adminSearch').addEventListener('input', (event) => {
     state.adminSearch = event.target.value;

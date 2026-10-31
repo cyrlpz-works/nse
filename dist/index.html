@@ -22,14 +22,14 @@
 <!-- The module chain is app.js -> api.js -> config.js: without these a browser discovers each
      file only after parsing the one before it. The Supabase bundle is needed at boot, so it is
      fetched beside them rather than after api.js runs. -->
-<link rel="modulepreload" href="api.js?v=2026-10-31-11">
+<link rel="modulepreload" href="api.js?v=2026-10-31-12">
 <link rel="modulepreload" href="config.js">
 <link rel="preload" href="vendor/supabase.min.js?v=2.118.0-1" as="script">
 <!-- Both numbers here -- and the same one on app.js's import of api.js -- must change whenever
      styles.css, app.js or api.js change; dev/bump.mjs rewrites all three and version.json.
      Pages caches each file for ten minutes, so without a new query a visitor can load this page
      with yesterday's script. The script then notices the stale version.json and reloads itself. -->
-<link rel="stylesheet" href="styles.css?v=2026-10-31-11">
+<link rel="stylesheet" href="styles.css?v=2026-10-31-12">
 </head>
 <body>
 <a class="sr-only" href="#main">Skip to content</a>
@@ -197,9 +197,13 @@
       <h2 id="ranks-title">Leaderboard</h2>
       <small id="ranksCount"></small>
     </div>
-    <p class="notice">Ordered by ranked points, highest first. Points come from each member's own
-      profile, and a Legendary <strong>has</strong> to enter theirs or the database refuses the save —
-      that is what keeps this list honest.</p>
+    <p class="notice">Multiplayer and Battle Royale are ranked separately, so each mode has its own
+      board. Points come from each member's own profile, and a Legendary <strong>has</strong> to
+      enter theirs or the database refuses the save — that is what keeps these lists honest.</p>
+    <div class="toolbar" id="rankModeFilter" role="group" aria-label="Leaderboard mode">
+      <button class="chip" type="button" data-rank-mode="Multiplayer" aria-pressed="true">Multiplayer</button>
+      <button class="chip" type="button" data-rank-mode="Battle Royale" aria-pressed="false">Battle Royale</button>
+    </div>
     <div class="panel" id="rankList"></div>
   </section>
 
@@ -405,6 +409,6 @@
 </dialog>
 
 <div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>
-<script src="app.js?v=2026-10-31-11" type="module"></script>
+<script src="app.js?v=2026-10-31-12" type="module"></script>
 </body>
 </html>
