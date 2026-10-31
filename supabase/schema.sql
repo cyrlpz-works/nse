@@ -121,8 +121,9 @@ create table if not exists public.posts (
 );
 create index if not exists posts_status_idx on public.posts (status);
 create index if not exists posts_visitor_idx on public.posts (visitor_id);
-create index if not exists posts_user_idx on public.posts (user_id);
 create index if not exists posts_created_idx on public.posts (created_at desc);
+-- An index on a column this run may be adding lives below, after the alter: on a live project
+-- "create table if not exists" skips the body, so it cannot be trusted to exist here.
 
 create table if not exists public.comments (
   id uuid primary key default gen_random_uuid(),
@@ -136,7 +137,6 @@ create table if not exists public.comments (
 );
 create index if not exists comments_post_idx on public.comments (post_id);
 create index if not exists comments_status_idx on public.comments (status);
-create index if not exists comments_user_idx on public.comments (user_id);
 
 -- A tap counter, not a like row per press: one row per member per post, taps goes up every time
 -- they tap the heart and back down when they tap it again.
@@ -150,7 +150,6 @@ create table if not exists public.likes (
   updated_at timestamptz not null default now()
 );
 create index if not exists likes_post_idx on public.likes (post_id);
-create index if not exists likes_user_idx on public.likes (user_id);
 
 create table if not exists public.teams (
   id uuid primary key default gen_random_uuid(),
@@ -170,7 +169,6 @@ create table if not exists public.teams (
   created_at timestamptz not null default now()
 );
 create index if not exists teams_created_idx on public.teams (created_at desc);
-create index if not exists teams_captain_idx on public.teams (captain_user_id);
 
 -- One row per application or membership. 'pending' = applied, 'accepted' = in the squad,
 -- 'rejected' = declined, removed, or left. Both live in one table because every captain action is
@@ -188,7 +186,6 @@ create table if not exists public.join_requests (
 );
 create index if not exists join_requests_team_idx on public.join_requests (team_id);
 create index if not exists join_requests_status_idx on public.join_requests (team_id, status);
-create index if not exists join_requests_user_idx on public.join_requests (user_id);
 
 -- Hearts on a member profile -- "taptap" again, as many times as they like. One row per pair, the
 -- count is the message. Kept separate from post taps so a heart on a person never moves a number
@@ -296,6 +293,15 @@ begin
   exception when duplicate_object then null;
   end;
 end $$;
+
+-- The owner columns and the indexes over them, now that every one of them exists on both a fresh
+-- project and yours: "create table if not exists" skips the body of an existing table, so an index
+-- on a column this run adds cannot sit inside that body.
+create index if not exists posts_user_idx on public.posts (user_id);
+create index if not exists comments_user_idx on public.comments (user_id);
+create index if not exists likes_user_idx on public.likes (user_id);
+create index if not exists join_requests_user_idx on public.join_requests (user_id);
+create index if not exists teams_captain_idx on public.teams (captain_user_id);
 
 -- Every rule below is stated explicitly rather than left to the CREATE TABLE blocks above, because
 -- on a live project those tables already exist: "create table if not exists" skips the whole body,
