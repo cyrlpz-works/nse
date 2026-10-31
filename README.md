@@ -230,6 +230,11 @@ under whatever subpath the repository is published from (`/TRIAS-Community/` tod
 git push origin main
 ```
 
+Pages caches every file for ten minutes, so a visitor can load a fresh page with an old script
+and see a layout that has already been repaired. `dist/index.html` asks for `styles.css` and
+`app.js` with a `?v=` number — **change that number in both places whenever either file
+changes**, and the browser has no choice but to fetch the new one.
+
 Pages serves files only, so the community data must come from Supabase (steps above). An
 earlier plan put this logic in a Qoder Sites Edge Function; the account's backend quota blocked
 it, and that code has been removed. Nothing in `dist/` expects a same-origin API.
