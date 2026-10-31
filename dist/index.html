@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TRIAS · CODM Community</title>
-<meta name="description" content="Community hub for Call of Duty Mobile squads in the Philippines — share loadouts, recruit teammates and track rising players.">
+<meta name="description" content="Community hub for Call of Duty Mobile squads in the Philippines — share clips, recruit teammates and track the players climbing this season.">
 <meta name="theme-color" content="#08080b">
 <meta property="og:title" content="TRIAS · CODM Community">
-<meta property="og:description" content="Share loadouts, recruit teammates and climb with your squad.">
+<meta property="og:description" content="Share clips, recruit teammates and climb with your squad.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff2d78'/%3E%3Cpath d='M20 8v11a4 4 0 0 1-8 0' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,21 +30,23 @@
 
     <nav class="nav" aria-label="Primary">
       <button class="nav-link" type="button" data-nav="home">Home</button>
-      <button class="nav-link" type="button" data-nav="community">Community</button>
-      <button class="nav-link" type="button" data-nav="teams">Teams</button>
+      <button class="nav-link" type="button" data-nav="community">Feed</button>
+      <button class="nav-link" type="button" data-nav="teams">Squads</button>
+      <button class="nav-link" type="button" data-nav="members">Members</button>
+      <button class="nav-link" type="button" data-nav="ranks">Ranks</button>
       <button class="nav-link" type="button" data-nav="profile">Profile</button>
       <button class="nav-link" type="button" data-nav="approval" id="approvalNav" hidden>Approval<span class="nav-count" id="approvalCount" hidden></span></button>
     </nav>
 
     <div class="header-tools">
       <button class="btn btn-ghost btn-sm" type="button" id="adminButton" aria-haspopup="dialog">Sign in</button>
-      <div class="header-user" id="headerUser">
-        <span class="avatar accent" id="headerInitial" aria-hidden="true">?</span>
+      <button class="header-user" type="button" id="headerUser" aria-label="Open your profile">
+        <span class="avatar accent" id="headerAvatar" aria-hidden="true">?</span>
         <span class="header-user-meta">
           <b id="headerName">Guest</b>
           <small id="headerRank">Set your rank</small>
         </span>
-      </div>
+      </button>
     </div>
   </div>
 </header>
@@ -57,10 +59,10 @@
     <div class="hero">
       <p class="hero-eyebrow"><span aria-hidden="true">◆</span> Season 2026 · Philippines</p>
       <h1 id="home-title">Squad up. <em>Dominate</em> the lobby.</h1>
-      <p>Post loadouts, find five-stack teammates and track the players climbing hardest this season — all in one community feed.</p>
+      <p>Post clips and screenshots, find five-stack teammates and track the players climbing hardest this season — all in one community feed.</p>
       <div class="hero-actions">
         <button class="btn btn-primary" type="button" data-nav="community">Open the feed</button>
-        <button class="btn btn-ghost" type="button" data-nav="teams">Browse teams</button>
+        <button class="btn btn-ghost" type="button" data-nav="members">See the members</button>
       </div>
     </div>
 
@@ -73,41 +75,67 @@
           <small id="recruitingCount"></small>
         </div>
         <div class="team-grid" id="homeTeams"></div>
-      </div>
-
-      <div class="stack">
-        <div class="section-head">
-          <h2>Top post writers</h2>
-          <small>by likes</small>
-        </div>
-        <div class="card" id="homeLeaders" style="padding:0.6rem"></div>
 
         <div class="section-head" style="margin-top:2rem">
           <h2>Latest from the feed</h2>
         </div>
         <div id="homeFeed"></div>
       </div>
+
+      <div class="stack">
+        <div class="section-head">
+          <h2>Leaderboard</h2>
+          <small><button class="link-like" type="button" data-nav="ranks">see all</button></small>
+        </div>
+        <div class="card" id="homeLeaders" style="padding:0.6rem"></div>
+
+        <div class="section-head" style="margin-top:2rem">
+          <h2>Online now</h2>
+          <small id="homeOnlineCount"></small>
+        </div>
+        <div class="card" id="homeOnline" style="padding:0.6rem"></div>
+      </div>
     </div>
   </section>
 
-  <!-- ============ COMMUNITY ============ -->
+  <!-- ============ COMMUNITY FEED ============ -->
   <section class="view" id="view-community" aria-labelledby="community-title">
     <div class="section-head">
       <h2 id="community-title">Community feed</h2>
       <small id="feedCount"></small>
     </div>
 
+    <p class="notice" id="composerGate" hidden>
+      Sign in with your own account to post, comment, tap a heart or ask to join a squad — that
+      account is what puts your name and your face on the feed.
+      <button class="btn btn-primary btn-sm" type="button" data-open-auth>Sign in</button>
+    </p>
+
     <form class="card composer" id="postForm">
       <div class="composer-row">
-        <span class="avatar accent" id="composerAvatar" aria-hidden="true">?</span>
+        <button class="avatar-btn" type="button" id="composerAvatarBtn" aria-label="Open your profile">
+          <span class="avatar accent" id="composerAvatar" aria-hidden="true">?</span>
+        </button>
         <label class="sr-only" for="postText">Your post</label>
         <textarea class="textarea" id="postText" maxlength="1200" rows="3"
-          placeholder="Share a clip, a loadout, or who you're queuing for…" required></textarea>
+          placeholder="Share a clip, a loadout, or who you're queuing for…"></textarea>
       </div>
       <p class="char-left" id="charLeft" aria-live="polite"></p>
 
+      <div class="composer-media">
+        <label class="file-btn" for="postImage">
+          <input class="sr-only" type="file" id="postImage" accept="image/png,image/jpeg,image/webp">
+          Add screenshot
+        </label>
+        <label class="sr-only" for="postVideo">YouTube link</label>
+        <input class="input" type="url" id="postVideo" maxlength="600" placeholder="YouTube link (optional)">
+        <button class="btn btn-ghost btn-sm" type="button" id="clearMedia" hidden>Remove media</button>
+      </div>
+      <img class="media-preview" id="mediaPreview" alt="" hidden>
+      <p class="field-hint" id="mediaHint" hidden></p>
+
       <div class="chips" id="categoryChips" role="group" aria-label="Post category"></div>
-      <button class="btn btn-primary btn-block" type="submit" id="postSubmit">Publish post</button>
+      <button class="btn btn-primary btn-block" type="submit" id="postSubmit">Send for approval</button>
     </form>
 
     <div class="toolbar">
@@ -118,7 +146,7 @@
       <label class="sr-only" for="feedSort">Sort feed</label>
       <select class="input select" id="feedSort" style="width:auto">
         <option value="new">Newest first</option>
-        <option value="top">Most liked</option>
+        <option value="top">Most tapped</option>
       </select>
     </div>
 
@@ -126,7 +154,39 @@
     <button class="btn btn-ghost btn-block" type="button" id="loadMore" hidden>Load older posts</button>
   </section>
 
-  <!-- ============ APPROVAL (site admin only) ============ -->
+  <!-- ============ MEMBERS ============ -->
+  <section class="view" id="view-members" aria-labelledby="members-title">
+    <div class="section-head">
+      <h2 id="members-title">Members</h2>
+      <small id="membersCount"></small>
+    </div>
+    <p class="notice">Everyone who has made an account here. Tap a card to see that player's profile —
+      face, IGN, rank and points, role and which squads they are on.</p>
+
+    <div class="toolbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg>
+        <input class="input" type="search" id="memberSearch" placeholder="Search a nickname…" aria-label="Search members by nickname">
+      </div>
+      <span class="pill" id="onlinePill"></span>
+    </div>
+
+    <div class="member-grid" id="memberGrid"></div>
+  </section>
+
+  <!-- ============ LEADERBOARD ============ -->
+  <section class="view" id="view-ranks" aria-labelledby="ranks-title">
+    <div class="section-head">
+      <h2 id="ranks-title">Leaderboard</h2>
+      <small id="ranksCount"></small>
+    </div>
+    <p class="notice">Ordered by ranked points, highest first. Points come from each member's own
+      profile, and a Legendary <strong>has</strong> to enter theirs or the database refuses the save —
+      that is what keeps this list honest.</p>
+    <div class="panel" id="rankList"></div>
+  </section>
+
+  <!-- ============ APPROVAL + ADMIN CONSOLE (site admin only) ============ -->
   <section class="view" id="view-approval" aria-labelledby="queueTitle">
     <div class="section-head">
       <h2 id="queueTitle">Awaiting approval</h2>
@@ -139,14 +199,29 @@
 
     <div class="divider"></div>
     <div class="section-head">
-      <h2>Squad captains</h2>
-      <small>you assign who captains a squad</small>
+      <h2>Site activity</h2>
+      <small id="activityCount"></small>
     </div>
-    <p class="field-hint">A captain runs one squad's roster: accept or decline applications and remove their own members. They cannot edit the squad card, approve posts or name other captains. Open a squad from the Teams page to hand it to someone.</p>
+    <div class="stats" id="adminStats"></div>
+    <div class="toolbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg>
+        <input class="input" type="search" id="adminSearch" placeholder="Search a nickname…" aria-label="Search members by nickname as admin">
+      </div>
+    </div>
+    <div class="panel" id="adminMembers"></div>
+    <div class="panel" id="activityList" style="margin-top:1rem"></div>
+
+    <div class="divider"></div>
+    <div class="section-head">
+      <h2>Squad captains</h2>
+      <small>you assign who captains a squad, and you can remove one</small>
+    </div>
+    <p class="field-hint">A captain runs one squad's roster: accept or decline applications and remove their own members. They cannot edit the squad card, approve posts or name other captains. Open a squad from the Squads page to hand it to someone or delete it.</p>
     <div class="team-grid" id="captainGrid"></div>
   </section>
 
-  <!-- ============ TEAMS ============ -->
+  <!-- ============ SQUADS ============ -->
   <section class="view" id="view-teams" aria-labelledby="teams-title">
     <div class="section-head">
       <h2 id="teams-title">Teams &amp; squads</h2>
@@ -168,9 +243,9 @@
     <div class="team-grid" id="teamGrid"></div>
   </section>
 
-  <!-- ============ TEAM DETAIL ============ -->
+  <!-- ============ SQUAD DETAIL ============ -->
   <section class="view" id="view-team" aria-labelledby="teamDetailName">
-    <button class="btn btn-ghost btn-sm" type="button" data-nav="teams" style="margin-bottom:1.1rem">← All teams</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-nav="teams" style="margin-bottom:1.1rem">← All squads</button>
     <div class="panel" id="teamDetail"></div>
   </section>
 
@@ -192,7 +267,7 @@
 <dialog id="createTeamDialog">
   <form method="dialog" id="createTeamForm">
     <div class="dialog-head">
-      <h2>Create a team</h2>
+      <h2>Create a squad</h2>
       <button class="close-btn" type="button" data-close-dialog aria-label="Close">✕</button>
     </div>
     <div class="dialog-body">
@@ -209,7 +284,6 @@
         <select class="input select" id="teamMode">
           <option>Multiplayer</option>
           <option>Battle Royale</option>
-          <option>Zombies</option>
         </select>
       </div>
       <div class="field">
@@ -222,6 +296,7 @@
           <option>Unranked</option><option>Rookie</option><option>Veteran</option><option>Elite</option><option>Pro</option>
           <option selected>Master</option><option>Grand Master</option><option>Legendary</option>
         </select>
+        <p class="field-hint">The database checks each applicant's own profile rank against this before it lets the application in.</p>
       </div>
       <div class="field">
         <label for="teamDesc">About the team</label>
@@ -229,7 +304,7 @@
       </div>
       <div class="field">
         <label for="teamSlots">Roster size</label>
-        <input class="input" id="teamSlots" type="number" min="1" max="12" value="5">
+        <input class="input" id="teamSlots" type="number" min="2" max="12" value="5">
       </div>
       <p class="field-hint">Publishing a squad needs the site admin. Afterwards, open the squad and hand it to a captain so they can run its roster.</p>
     </div>
@@ -240,25 +315,38 @@
   </form>
 </dialog>
 
+<!-- ============ MEMBER PROFILE DIALOG ============ -->
+<dialog id="memberDialog">
+  <div class="dialog-head">
+    <h2 id="memberDialogTitle">Member</h2>
+    <button class="close-btn" type="button" data-close-member aria-label="Close">✕</button>
+  </div>
+  <div class="dialog-body" id="memberDialogBody"></div>
+</dialog>
+
 <!-- ============ SIGN IN / CREATE ACCOUNT DIALOG ============ -->
 <dialog id="adminDialog">
   <form id="adminForm">
     <div class="dialog-head">
-      <h2 id="authDialogTitle">Admin sign in</h2>
+      <h2 id="authDialogTitle">Sign in</h2>
       <button class="close-btn" type="button" data-close-admin aria-label="Close">✕</button>
     </div>
     <div class="dialog-body">
       <div class="field">
         <label for="authEmail">Email</label>
         <input class="input" id="authEmail" type="email" autocomplete="username" maxlength="100"
-          placeholder="the address in Supabase Authentication">
+          placeholder="your@address.com">
       </div>
       <div class="field">
         <label for="authPassword">Password</label>
         <input class="input" id="authPassword" type="password" autocomplete="current-password" maxlength="200"
           placeholder="at least 6 characters">
-        <p class="field-hint" id="authHint">Site admins approve posts, publish squads and name captains. A team captain signs in through this same dialog — they only run their own squad's roster.</p>
       </div>
+      <div class="field" id="authIgnField" hidden>
+        <label for="authIgn">Your IGN</label>
+        <input class="input" id="authIgn" maxlength="24" placeholder="the name that shows on your posts">
+      </div>
+      <p class="field-hint" id="authHint"></p>
     </div>
     <div class="dialog-foot">
       <button class="btn btn-ghost" type="button" id="authToggle">Create an account</button>

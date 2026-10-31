@@ -598,21 +598,197 @@ main > .notice { margin-bottom: 1.5rem; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 
 /* ---------------- Dialog ---------------- */
+/* A modal dialog is centred by the browser, but a tall form plus a focused field made Chrome
+   scroll it and pin the box against the top of the viewport — the sign-in card looked like it
+   had jumped away while you typed. Capping the height and scrolling the body inside the dialog
+   keeps the frame itself where it was. */
 dialog {
   width: min(520px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 3rem);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
   background: var(--bg-elev);
   color: var(--text);
   padding: 0;
+  overflow: hidden;
 }
+dialog:not([open]) { display: none; }
 dialog::backdrop { background: rgba(4, 4, 7, 0.72); backdrop-filter: blur(3px); }
-.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.15rem 1.35rem; border-bottom: 1px solid var(--line); }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.15rem 1.35rem; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .dialog-head h2 { font-family: var(--font-display); font-size: 1rem; letter-spacing: 0.1em; text-transform: uppercase; }
-.dialog-body { padding: 1.35rem; }
-.dialog-foot { display: flex; justify-content: flex-end; gap: 0.6rem; padding: 1rem 1.35rem; border-top: 1px solid var(--line); }
+.dialog-body { padding: 1.35rem; overflow-y: auto; }
+.dialog-foot { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; padding: 1rem 1.35rem; border-top: 1px solid var(--line); flex-shrink: 0; }
 .close-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 1.1rem; line-height: 1; }
 .close-btn:hover { color: var(--text); border-color: var(--pink); }
+#memberDialog { width: min(640px, calc(100vw - 2rem)); }
+
+/* ---------------- Avatars as pictures ---------------- */
+/* One face everywhere: the profile's uploaded picture when there is one, initials otherwise.
+   Sizes are modifiers so the same markup serves the header, a byline and the member card. */
+.avatar-img { object-fit: cover; background: var(--bg-soft); font-size: 0; }
+.avatar.lg { width: 64px; height: 64px; border-radius: 16px; font-size: 1.4rem; }
+.avatar.xl { width: 88px; height: 88px; border-radius: 20px; font-size: 1.9rem; }
+.panel-head .avatar.xl { border: 3px solid var(--bg-elev); }
+
+.avatar-btn {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 14px;
+  cursor: pointer;
+  line-height: 0;
+  transition: transform 0.16s ease, box-shadow 0.2s ease;
+}
+.avatar-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 0 2px rgba(255, 45, 120, 0.45); }
+.avatar-btn:disabled { cursor: default; }
+
+/* A name that opens the same card as the face does. */
+.link-like {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.link-like:hover:not(:disabled) { color: var(--pink-bright); text-decoration: underline; }
+.link-like:disabled { cursor: default; }
+.name-link { font-weight: 700; }
+
+/* ---------------- Feed media ---------------- */
+.post-image-link { display: block; margin-top: 0.85rem; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
+.post-image { width: 100%; max-height: 460px; object-fit: contain; background: #000; display: block; }
+.post-image-link:hover { border-color: var(--pink); }
+
+.video-facade {
+  display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
+  margin-top: 0.85rem; padding: 0.8rem 0.95rem;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  background: var(--bg);
+}
+.post-video {
+  width: 100%; aspect-ratio: 16 / 9; margin-top: 0.85rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: #000;
+}
+
+.composer-media { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem; }
+.composer-media .input { flex: 1; min-width: 200px; }
+.file-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--line-strong); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 0.76rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+.file-btn:hover { border-color: var(--pink); background: rgba(255, 45, 120, 0.12); color: var(--white); }
+.media-preview {
+  margin-top: 0.75rem; max-height: 190px; border-radius: var(--radius);
+  border: 1px solid var(--line); object-fit: contain; background: #000;
+}
+
+/* Hearts can be tapped more than once, so an active tap button is not an aria-pressed one. */
+.icon-btn.is-on { color: var(--pink-bright); border-color: rgba(255, 45, 120, 0.45); background: rgba(255, 45, 120, 0.12); }
+.icon-btn.danger { color: var(--warn); }
+.icon-btn.danger:hover { border-color: rgba(255, 176, 32, 0.5); background: rgba(255, 176, 32, 0.1); color: var(--white); }
+.btn.danger { border-color: rgba(255, 45, 120, 0.5); color: var(--pink-bright); }
+.btn.danger:hover:not(:disabled) { background: rgba(255, 45, 120, 0.16); border-color: var(--pink); color: var(--white); }
+
+/* ---------------- Members ---------------- */
+.member-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 0.9rem; }
+.member-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.45rem;
+  padding: 1.05rem; text-align: left; cursor: pointer; color: inherit;
+}
+.member-card-top { position: relative; align-self: flex-start; line-height: 0; }
+.member-name { font-family: var(--font-display); font-size: 0.98rem; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; overflow-wrap: anywhere; }
+.member-sub { font-size: 0.76rem; color: var(--dim); letter-spacing: 0.04em; }
+.member-affil { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.74rem; color: var(--muted); }
+.member-affil i { font-style: normal; }
+.member-hearts { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 0.15rem; font-size: 0.8rem; font-weight: 700; color: var(--pink-bright); }
+.member-hearts svg { width: 14px; height: 14px; fill: currentColor; }
+
+/* "Online" is a heartbeat, not a connection, so it is a small dot rather than a live badge. */
+.online-dot {
+  position: absolute; right: -4px; bottom: -4px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--dim); border: 2px solid var(--bg-elev);
+}
+.online-dot.is-online { background: var(--ok); }
+.pill {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.85rem; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.04);
+  font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The member profile card. */
+.member-hero { display: flex; align-items: center; gap: 1.1rem; }
+.member-ign { font-family: var(--font-display); font-size: 1.35rem; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+.member-tag { font-size: 0.76rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.member-tag.is-online { color: var(--ok); }
+.member-stance { font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pink-bright); font-weight: 700; margin-top: 0.25rem; }
+.member-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem;
+  margin: 1.25rem 0;
+}
+.member-facts > div { padding: 0.75rem 0.85rem; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.member-facts b { display: block; font-family: var(--font-display); font-size: 0.92rem; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.member-facts small { display: block; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); margin-top: 0.2rem; }
+.member-groups { display: grid; gap: 0.5rem; }
+.member-groups p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; font-size: 0.9rem; color: var(--text); }
+.member-groups b { font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); min-width: 92px; }
+.member-groups .second { color: var(--pink-bright); font-size: 0.78rem; letter-spacing: 0.04em; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.chip-row .chip { cursor: pointer; }
+.member-heart-row { display: flex; align-items: center; gap: 0.85rem; margin-top: 1.35rem; padding-top: 1.1rem; border-top: 1px solid var(--line); }
+.member-heart-row b { font-family: var(--font-display); font-size: 1.1rem; color: var(--pink-bright); }
+.member-heart-row svg { width: 15px; height: 15px; fill: currentColor; }
+
+/* ---------------- Tables (leaderboard + admin console) ---------------- */
+.table-head, .table-row {
+  display: grid; gap: 0.6rem; align-items: center;
+  grid-template-columns: 1.7fr 1.1fr 1fr 0.9fr;
+  padding: 0.65rem 0.8rem;
+}
+.table-head {
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+.table-row { border-radius: 10px; font-size: 0.84rem; }
+.table-row + .table-row { margin-top: 0.25rem; }
+.table-row:hover { background: rgba(255, 255, 255, 0.03); }
+.table-cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.table-cell .avatar { width: 26px; height: 26px; border-radius: 8px; font-size: 0.66rem; }
+.table-cell.link-like { display: flex; align-items: center; gap: 0.55rem; color: var(--text); font-weight: 600; }
+.rank-head, .rank-row { grid-template-columns: 42px 1.7fr 0.9fr 0.8fr 1fr; }
+.rank-row .place { font-family: var(--font-display); font-weight: 800; color: var(--dim); }
+.rank-row:nth-child(2) .place { color: var(--pink); }
+.rank-row:nth-child(3) .place { color: var(--pink-bright); }
+.rank-row:nth-child(4) .place { color: rgba(255, 92, 150, 0.7); }
+.rank-row .points { font-family: var(--font-display); font-weight: 700; color: var(--text); }
+.table-cell em.ok { font-style: normal; color: var(--ok); font-size: 0.74rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
+
+.log-line {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem;
+  padding: 0.5rem 0; border-top: 1px solid var(--line); font-size: 0.82rem; color: var(--muted);
+}
+.log-line b { color: var(--text); font-weight: 700; }
+.log-line time { margin-left: auto; color: var(--dim); font-size: 0.74rem; white-space: nowrap; }
+
+/* ---------------- Profile editor ---------------- */
+.profile-form { display: grid; gap: 0.25rem; padding-top: 1.25rem; }
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0 1rem; }
+.avatar-picker { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+#pfAvatarPreview { line-height: 0; }
 
 /* ---------------- Footer ---------------- */
 .site-footer { border-top: 1px solid var(--line); margin-top: 3rem; background: rgba(8, 8, 11, 0.6); }
@@ -635,4 +811,25 @@ dialog::backdrop { background: rgba(4, 4, 7, 0.72); backdrop-filter: blur(3px); 
   .panel-head .avatar { width: 70px; height: 70px; font-size: 1.5rem; }
   .panel-body { padding: 1.15rem 1rem; }
   .composer { padding: 1rem; }
+  .member-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .table-head, .table-row { grid-template-columns: 1.5fr 1fr; }
+  .table-head:not(.rank-head) span:nth-child(n+3),
+  .table-row:not(.rank-row) .table-cell:nth-child(n+3) { display: none; }
+  .rank-head, .rank-row { grid-template-columns: 30px 1.5fr 1fr; }
+  /* Mobile keeps place, name and points; the tier is already visible in the badge on the
+     member card, and hiding a cell also removes it from the grid, so the row cannot wrap. */
+  .rank-head span:nth-child(3), .rank-head span:nth-child(5),
+  .rank-row .table-cell:nth-child(3), .rank-row .table-cell:nth-child(5) { display: none; }
+  .member-hero { align-items: flex-start; gap: 0.85rem; }
+  .log-line time { margin-left: 0; }
+}
+
+@media (max-width: 560px) {
+  .member-facts { grid-template-columns: 1fr 1fr; }
+  .member-groups b { min-width: 100%; }
+  .field-row { grid-template-columns: 1fr; }
+  .composer-media { flex-direction: column; align-items: stretch; }
+  .composer-media .input { min-width: 0; }
+  .post-image { max-height: 320px; }
+  dialog { max-height: calc(100dvh - 1.5rem); }
 }

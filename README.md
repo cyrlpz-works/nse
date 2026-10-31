@@ -1,36 +1,45 @@
 # TRIAS · CODM Community
 
-Community hub for a Call of Duty Mobile squad community: a post feed with likes and
-comments, team/squad pages with join requests, and a device-local player profile.
-**Anyone can post and comment, nothing appears until the admin approves it on the Approval
-page. Squad captains run their own roster: accept, decline, remove.**
+Community hub for a Call of Duty Mobile squad community: a news feed of text, screenshots and
+clips, member profiles, squads with join requests, a points leaderboard, and an admin-run
+approval queue.
 
-The live site is static **GitHub Pages** plus a free **Supabase** project (Postgres with
-row level security, and Auth for the admin account). No server code runs on Pages, and none
-is needed: the database enforces moderation and the input rules by itself.
+**Everything that writes belongs to an account.** Visitors read the site freely; to post,
+comment, tap a heart, ask to join a squad or edit a profile you sign in first. Nothing a member
+publishes reaches the feed until the site admin approves it, so nudity and spam stop at the
+Approval page. Squad captains run their own roster and nothing else.
+
+The live site is static **GitHub Pages** plus a free **Supabase** project (Postgres with row
+level security, Auth for accounts, Storage for pictures). No server code runs on Pages, and none
+is needed: the database enforces moderation, ownership and the input rules by itself.
+
+Live: https://cyrlpz-works.github.io/TRIAS-Community/
 
 ## Layout
 
 ```
 dist/            published website (index.html, styles.css, app.js, api.js, config.js)
 dist/config.js   the two Supabase values — the only file you edit to connect the site
-supabase/        schema.sql: tables, RLS policies, CHECK rules (run this in Supabase)
+supabase/        schema.sql: tables, RLS policies, CHECK rules, storage buckets (run this in Supabase)
 index.html       redirect stub so GitHub Pages opens the app in dist/
 legacy/          the original single-file page, kept for reference
 dev/             preview-server.mjs — serves dist/ locally; never published
 ```
 
 `supabase/schema.sql` is the only file that belongs in the Supabase SQL Editor — it is written
-for Supabase's `public` schema and its own `auth.uid()` / `auth.role()` helpers.
+for Supabase's `public` schema and its own `auth.uid()` / `storage.foldername()` helpers.
 
 ## Connect the site to Supabase (one-time, free)
 
 1. [supabase.com](https://supabase.com) → New project. Any region, the free plan.
 2. SQL Editor → New query → paste the whole contents of `supabase/schema.sql` → **Run**.
    Re-running it is safe: rows are kept, missing columns are added, and every policy in the
-   `public` schema is dropped and recreated from this file.
-3. Authentication → Providers → Email: turn **Confirm email** off, then create the admin:
-4. Authentication → Users → Add user: the admin email and a long password.
+   `public` schema is dropped and recreated from this file. **Do this before deploying a new
+   `dist/`** — the current frontend reads `profiles`, and against an un-migrated project the
+   feed, squads and members all come back empty.
+3. Authentication → Sign In / Providers → Email: turn **Confirm email** off. Without it, a
+   member who signs up from the site has no session and cannot use the account they just made.
+4. Authentication → Users → Add user: the admin email and a long, unique password.
 5. SQL Editor → name that account as an admin. The site treats a merely signed-in account as a
    stranger until it has a row in `site_admins`:
 
@@ -45,13 +54,12 @@ for Supabase's `public` schema and its own `auth.uid()` / `auth.role()` helpers.
 7. Put both values in `dist/config.js`, commit, and let Pages rebuild.
 
 With email confirmation off, anyone can also create their own account from the site's
-**Create an account** button. That is intentional and it does not make them an admin: it is how
-a team captain gets the login that proves their roster decisions. Turn confirmation back on
-when you would rather create captain accounts yourself in the dashboard.
+**Create an account** button — that is how members, captains and the leaderboard get populated.
+It does not make them an admin: only a row in `site_admins` does.
 
 The anon key is meant to be public — it identifies the project, it does not grant access.
-Every request is checked against the policies in `supabase/schema.sql`, and the browser's
-role is `anon` until the admin signs in.
+Every request is checked against the policies in `supabase/schema.sql`. The **service_role**
+key is never used by this site and must never appear in it.
 
 ## Running it locally
 
@@ -60,108 +68,151 @@ node dev/preview-server.mjs 4173     # http://127.0.0.1:4173 serves dist/
 ```
 
 It only serves files. `dist/` talks to Supabase directly, so the preview runs the real feed,
-queue and sign-in against your project — no fake backend in the middle.
+profiles and sign-in against your project — no fake backend in the middle.
 
-With empty values in `dist/config.js` the site still renders: it shows the design, empty
-feed and squads, and one notice explaining that no database is connected. Nothing is
-posted, so there are no error toasts.
+With empty values in `dist/config.js` the site still renders: it shows the design, an empty
+feed and squads, and one notice explaining that no database is connected. Nothing is posted, so
+there are no error toasts.
 
-## Sign in, approval and captains
+## Pages of the site
 
-The **Sign in** button opens a normal email + password dialog handled by Supabase Auth; the
-session lives in `localStorage` and refreshes itself. Signing in alone buys nothing — the
-database compares the account against `public.site_admins` (site admin) and against
-`public.teams.captain_user_id` (squad captain). Authority lives in those two tables, so a
-stranger who signs up through the same dialog is a stranger to the site.
+| Page | What is there |
+| --- | --- |
+| Home | stats, recruiting squads, the top five of the leaderboard, who is online, latest posts |
+| Feed | the composer (text, screenshot, YouTube link) and every approved post |
+| Squads | squad cards, filters, the squad page with its roster and applications |
+| Members | every account, searchable by IGN; tap a card for that player's profile |
+| Ranks | the points leaderboard |
+| Profile | your own account: face, IGN, rank and points, mode and role, standing, groups |
+| Approval | admin only: the queue, member search, totals, the activity log, captain assignments |
+
+## Accounts, profiles and what they can do
+
+Signing in buys nothing by itself. The database compares the account against
+`public.site_admins` (site admin) and against `public.teams.captain_user_id` (squad captain),
+and every row you write is stamped with `auth.uid()`.
+
+A profile is: an **avatar** (uploaded, resized in the browser before it is stored), an **IGN**
+— the nickname that appears on your posts — a **rank tier** plus optional **rank points**
+(points are required for Legendary because they are what the leaderboard sorts by), a **main
+mode** with one role from that mode, a **standing** of member or executive (an executive picks a
+position: Founder, Co-Founder, Leader, Co-Leader, Officer, Elder, Recruiter, Strategist,
+Trainer), and two groups each with a second: **main clan / second clan** and **main community /
+second community**.
 
 | Action | Who can do it | Where it is enforced |
 | --- | --- | --- |
-| Read the feed, squads, stats, comment threads | anyone | RLS: `status = 'approved'` |
-| Submit a post or a comment | anyone | RLS: insert allowed only with `status = 'pending'` |
-| Like / unlike a post | anyone, on approved posts | RLS + `unique (post_id, visitor_id)` |
-| Ask to join a squad | anyone | RLS: `join_requests` insert is `status = 'pending'` |
-| See the approval queue | site admin | RLS: pending rows hidden from everyone else |
-| Approve / reject (delete) a queued item | site admin | RLS: `posts` / `comments` writes need `is_site_admin()` |
-| Publish or edit a squad card | site admin | RLS: `teams` writes need `is_site_admin()` |
-| Accept, decline or remove a roster row of one squad | that squad's captain | RLS: `is_captain_of(team_id)` + `decided_by = auth.uid()` |
-| Name a squad's captain | site admin | RLS: it is a `teams` update |
+| Read the feed, squads, members, leaderboard | anyone | RLS: `status = 'approved'` selects |
+| Create an account and a profile | anyone | `profiles` insert/update is own row only |
+| Post, comment, tap a heart, apply to a squad | a signed-in member | RLS: writes require `user_id = auth.uid()` |
+| Have a post reach the feed | the site admin approves it | RLS: only `is_site_admin()` may set `status = 'approved'` |
+| Delete a post (queued or published) | its author while queued; the admin any time | RLS: `posts` delete policies |
+| Heart a post or a member several times | anyone signed in, once per account per target | `likes (post_id, user_id)` and `member_hearts (from_user_id, to_user_id)` are unique; a `taps` counter grows |
+| Publish, edit or remove a squad | the site admin only | RLS: `teams` writes require `is_site_admin()` |
+| Accept, decline, remove or name a roster row | that squad's captain | RLS: `is_captain_of(team_id)` + `decided_by = auth.uid()` |
+| Leave a squad you are in | you | RLS: `joins own leave` narrows it to your own accepted row |
+| Join a squad | you, if your profile's rank reaches its minimum | RLS: `joins apply` compares `rank_position(profiles.rank)` with `teams.required_rank` |
+| Name a squad's captain | the site admin | RLS: it is a `teams` update |
 | Add someone to `site_admins` | an existing site admin | RLS: `admins admin only` |
+| Read the activity log | the site admin | RLS: `activity_log` is admin-readable, member-insertable |
 
-A captain therefore cannot edit the squad's card, approve a post, or touch another squad: the
-only row type they may update is a join request whose team lists their own account id. The
-Approval page is a nav item that appears only for a signed-in site admin; approving there is
-the same update the database would accept from anyone it recognises, so the page is a
-convenience, not the security boundary.
+A captain therefore cannot edit their squad's card, approve a post, or touch another squad: the
+only rows they may update are join requests of the one team that lists their account, and the
+squad record itself is writable only by an admin. That is what keeps one captain out of another
+captain's roster.
 
-A rejected post also loses its comments and likes — both tables reference `posts (id)` with
-`on delete cascade`. Approved posts appear in the feed for every visitor within the 60-second
-refresh the page already does.
+A rename needs no repair pass. The feed, the comments, the members page and the leaderboard all
+read the author's live `profiles` row, so changing your IGN in Profile changes it everywhere at
+once. The `author` / `rank` columns on a post are a snapshot kept only for the case where the
+account is deleted — then the byline falls back to "Former member" instead of breaking.
 
-Known limits of this design, stated plainly:
-- To become a captain, a person needs an account **and** a row on the squad's roster or in its
-  applications — that is the only place the site can read an account id from. The step before
-  that (applying with an account) is a normal join request.
-- A captain is one account per squad, and only an admin can move it — name a replacement or
-  remove the role from the squad page.
-- Taking a captain off the roster does **not** remove the captaincy; the role lives on the squad
-  row, not on the membership row. Use "Remove as captain" for that.
-- A declined applicant cannot send a second request to the same squad from the same device: the
-  unique `(team_id, visitor_id)` index covers the row whichever status it ended in.
-- An anonymous visitor cannot see their own queued post (the database hides pending rows from
-  everyone but an admin), so the confirmation is the on-screen message "Sent to the admin".
-- The 60-second pause between submissions is a per-device timer in the browser, not a server
-  rate limit. The real protection against spam is that nothing publishes without approval.
-- Anyone who knows the admin password has full write access. Keep it unique, and add a second
-  row in `site_admins` instead of sharing it.
-- Likes are counted from the like rows, so a visitor who clears their browser storage can like
-  a post again — identity is a device-local UUID, not an account.
-- Because that UUID is chosen by the browser, the database cannot tell whose like is whose, so
-  the "undo your like" policy is deliberately `using (true)` for `anon`. Someone determined
-  enough could clear other visitors' likes on a post; nothing published depends on like counts,
-  and the feed itself cannot be altered this way. Tightening it means real visitor accounts.
+A rejected post loses its comments, likes and hearts — those tables reference `posts (id)` with
+`on delete cascade`. Approved posts appear for every visitor within the 60-second refresh the
+page already does.
 
 ## Ranked ladder
 
-The ladder the site accepts is enforced twice: `rankLabel()` builds the label in
-`dist/app.js` and a `CHECK` constraint rejects anything else in Postgres.
+The ladder has no subdivisions any more: a tier is the whole rank. It is enforced twice — the
+selects in `dist/app.js` and `public.rank_position(text)` / a `CHECK` constraint in Postgres,
+which rejects anything outside this list.
 
-| Tier | Subdivisions | Ranked points |
-| --- | --- | --- |
-| Unranked | — | not placed yet |
-| Rookie | I – V | 0 – 1,000 |
-| Veteran | I – V | 1,001 – 2,000 |
-| Elite | I – V | 2,001 – 3,000 |
-| Pro | I – V | 3,001 – 4,500 |
-| Master | N/A | 4,501 – 6,000 |
-| Grand Master | N/A | 6,001 – 8,000 |
-| Legendary | N/A | 8,001+ |
+| Tier | Ranked points |
+| --- | --- |
+| Unranked | not placed yet |
+| Rookie | 0 – 1,000 |
+| Veteran | 1,001 – 2,000 |
+| Elite | 2,001 – 3,000 |
+| Pro | 3,001 – 4,500 |
+| Master | 4,501 – 6,000 |
+| Grand Master | 6,001 – 8,000 |
+| Legendary | 8,001+ — points are required |
 
-A post stores the full label, e.g. `Pro III`; a squad's `required_rank` is a tier only.
-Anything else — `Diamond`, `Master V` — is rejected by the database.
+Points are what the **Ranks** page sorts by, so a Legendary player who does not enter them has
+nothing to be placed by. A squad's `required_rank` is a tier, and the database compares it with
+each applicant's own profile rank when they apply.
+
+## Roles by main mode
+
+The mode decides which list the role select offers, and the same rule is a `CHECK` in the
+database — a Battle Royale class cannot be saved on a Multiplayer profile.
+
+- **Multiplayer**: Slayer, Objective, Anchor, All Around, Team Leader.
+- **Battle Royale** (class): Clown, Defender, Desperado, Firefly, Hacker, Igniter, Jet Boost,
+  Kinetic Station, Mechanic, Medic, Misdirection, Ninja, Poltergeist, Pumped, Quick Strike,
+  Ravager Launcher, Refitter, Revive, Rewind, Scout, Shock Charge, Shock Wave, Smoke Bomber,
+  Spotter, Tactical Bouncer, Tactical Mirror, Teleporter, Shock Stick, Toxic Overload,
+  Trap Master, Trickster.
 
 ## How data is stored
 
 | Data | Where | Shared between visitors |
 | --- | --- | --- |
-| Posts, comments, likes | `public.posts`, `public.comments`, `public.likes` | yes |
+| Posts (text, screenshot, clip link) | `public.posts` | yes |
+| Comments, post hearts | `public.comments`, `public.likes` | yes |
+| Profiles: IGN, avatar, rank, points, mode, role, standing, groups | `public.profiles` | yes — this is what the feed reads |
+| Member hearts | `public.member_hearts` | yes |
 | Squads, join requests, captains | `public.teams`, `public.join_requests` | yes |
 | Who runs the site | `public.site_admins` | yes, read by the policies |
-| Your nickname, rank, bio | `localStorage` (`jt.profile`) | no, device-local |
-| Visitor identity | `localStorage` (`jt.visitor`, UUID) | attribution for likes/joins |
-| Admin or captain session | `localStorage` (Supabase auth token) | proves which account this browser is |
+| Activity log | `public.activity_log` | admin-readable only |
+| Picture files | Storage buckets `avatars` and `post-images` | public read, own-folder write |
+| Session | `localStorage` (Supabase auth token) | proves which account this browser is |
 | Submission timer | `localStorage` (`jt.last.*`) | courtesy cooldown only |
 
-The browser talks to `https://<project>.supabase.co/rest/v1/...` through the Supabase SDK,
-loaded from jsDelivr. There is no secret in the page beyond the anon key, and the service
-role key is never used here — keep it out of this repository.
+`visitor_id` columns still exist for rows written before accounts, and the old device-keyed
+unique constraints still hold them; new rows are keyed by `user_id`.
 
-The site starts **empty on purpose**: no demo squads, no sample posts. The first posts come
-from visitors and wait in the approval queue until the admin releases them.
+Input rules enforced in Postgres: a post says something **or** shows something (text of 3–1200
+characters, or an image, or a clip link), clip links are YouTube only (`youtube.com/watch?v=` /
+`youtu.be/`), comments are 2–300 characters, the category whitelist, the rank ladder, IGN length
+(2–24), executive requires a position, Legendary requires points, hearts and taps are counted
+per account, squad name length and uniqueness, `slot_count` between 2 and 12, one application
+per account per squad.
 
-Input rules enforced in Postgres: content length (3–1200 characters per post, 2–300 per
-comment), the category whitelist, the rank ladder, author and nickname length, squad name
-length and uniqueness, `slot_count` between 2 and 12, one like per visitor per post, and one
-join request per visitor per squad.
+## Known limits, stated plainly
+
+- **Pictures cost storage.** The free plan gives 1 GB in total. Avatars are resized to 256 px
+  and stored at one fixed path per account, so changing your picture replaces it instead of
+  piling up. Post screenshots are resized to 1200 px but each one is its own object, and
+  deleting the post does not delete the file — the `post-images` bucket is pruned from the
+  Supabase Storage dashboard when you want the space back.
+- **"Online" is a heartbeat**, not a connection: the page stamps `last_seen_at` once a minute
+  and anyone seen in the last three minutes shows as online. A browser left open on a table
+  looks like a person.
+- The 60-second pause between submissions is a per-device timer in the browser, not a server
+  rate limit. The real protection against spam is that nothing publishes without approval.
+- A declined applicant cannot send a second request to the same squad from the same account: the
+  unique `(team_id, user_id)` index covers the row whichever status it ended in, and the site
+  reports "You already asked to join this squad." There is no undo for a decline — a captain
+  re-reading an application they turned down has to do it from the Supabase dashboard.
+- Deleting an account from Supabase leaves its posts behind with the byline "Former member"
+  (`on delete set null`); hearts, likes and roster rows go with it (`on delete cascade`).
+- Anyone who knows the admin password has full write access. Keep it unique, and add a second
+  row in `site_admins` instead of sharing it.
+- The clip player is a click-to-load facade over `youtube-nocookie.com`, so no third-party
+  script runs until someone asks for the video. Other video hosts are rejected by the database.
+- A captain is one account per squad, and only an admin can move it. Taking a captain off the
+  roster does not remove the captaincy — the role lives on the squad row; use "Remove as
+  captain" for that.
 
 ## Publishing
 
@@ -181,9 +232,13 @@ it, and that code has been removed. Nothing in `dist/` expects a same-origin API
 ## Editing notes
 
 - Frontend is plain ES modules — no build step. `app.js` renders every view; `index.html`
-  holds only shells and the create-squad and admin dialogs.
+  holds only shells and the create-squad, member and sign-in dialogs.
 - `api.js` owns every database call, and `config.js` owns the two connection values; add
-  queries there, not inline in `app.js`.
-- All untrusted text is escaped in `app.js` (`esc()`); visitor content is never inserted as
-  raw HTML, so a stored `<script>` in a post cannot run.
+  queries there, not inline in `app.js`. The rank tiers, role lists and categories are exported
+  from `api.js` so the selects and the database CHECKs cannot drift apart.
+- All untrusted text is escaped in `app.js` (`esc()`), and any stored URL goes through
+  `safeUrl()` first, so only an `https` address reaches an `src` or `href` — a visitor's post
+  cannot become script.
+- Writes never ask the API to echo the row back: a queued row is deliberately invisible to its
+  author, and PostgREST reports an invisible `RETURNING` as a permission failure.
 - Theme tokens live at the top of `styles.css` (`--pink`, `--bg`, …).
