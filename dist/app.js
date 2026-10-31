@@ -128,6 +128,7 @@ const ERRORS = {
   sign_up_failed: 'The account could not be created. Try again, or add this account in Supabase → Authentication → Users.',
   email_confirmation: 'That account still needs its email confirmed. Supabase can turn confirmation off in Authentication → Providers.',
   auth_failed: 'That email or password is not correct.',
+  not_an_admin: 'That account is not a site administrator, so this door signed it straight back out. Use Sign in for the member side.',
   backend_missing: 'This site is not connected to its database yet.',
   database_unavailable: 'The database refused that request.',
   network_error: 'Cannot reach the community database. Check your connection.',
@@ -227,7 +228,7 @@ function paintHeader() {
 }
 
 function paintAdminUi() {
-  const button = $('adminButton');
+  const button = $('authButton');
   const signedInAs = state.isAdmin ? 'admin' : isSignedIn() ? 'member' : 'guest';
   button.textContent = signedInAs === 'admin' ? 'Signed in as admin' : signedInAs === 'member' ? 'Signed in' : 'Sign in';
   button.classList.toggle('is-on', signedInAs !== 'guest');
@@ -235,7 +236,9 @@ function paintAdminUi() {
     ? 'Signed in as the site admin. Click to sign out'
     : signedInAs === 'member'
       ? 'Signed in with your own account. Click to sign out'
-      : 'Sign in — your own account, or the site admin account');
+      : 'Sign in with your own account to post, comment and join squads');
+  // One session per browser, so the admin door closes as soon as any account is signed in here.
+  $('staffButton').hidden = signedInAs !== 'guest';
 
   $('approvalNav').hidden = !state.isAdmin;
   $('openCreateTeam').hidden = state.offline || !state.isAdmin;
@@ -1580,14 +1583,16 @@ let authMode = 'signin';
 function setAuthMode(mode) {
   authMode = mode;
   const signingIn = mode === 'signin';
-  $('authDialogTitle').textContent = signingIn ? 'Sign in' : 'Create an account';
-  $('adminSubmit').textContent = signingIn ? 'Sign in' : 'Create account';
+  $('authDialogTitle').textContent = signingIn ? 'Member sign in' : 'Create a member account';
+  $('authSubmit').textContent = signingIn ? 'Sign in' : 'Create account';
   $('authToggle').textContent = signingIn ? 'Create an account' : 'I already have an account';
   $('authPassword').autocomplete = signingIn ? 'current-password' : 'new-password';
   $('authIgnField').hidden = signingIn;
   $('authHint').textContent = signingIn
-    ? 'Every post, comment, heart and roster change is filed under the account you sign in with. The site admin approves posts, publishes squads and names captains through this same dialog.'
-    : 'Your IGN is required — it is the name the feed shows, and the Members page lists. Creating an account does not make anyone an admin.';
+    ? 'Every post, comment, tap and roster request is filed under the account you sign in with.'
+    : 'Your IGN is required — it is the name the feed shows, and the Members page lists. This gives '
+      + 'you the member side of the site: post, comment, tap, join squads and run the roster of any '
+      + 'squad you are made captain of.';
 }
 
 function openAuthDialog() {
@@ -1595,10 +1600,28 @@ function openAuthDialog() {
   $('authPassword').value = '';
   $('authIgn').value = '';
   setAuthMode('signin');
-  $('adminDialog').showModal();
+  $('authDialog').showModal();
   // The field is focused after the dialog is painted, so the browser scrolls the dialog itself
   // into the middle of the screen instead of jumping the page behind it.
   requestAnimationFrame(() => $('authEmail').focus());
+}
+
+/* ---------------- admin door ---------------- */
+function openStaffDialog() {
+  $('staffEmail').value = '';
+  $('staffPassword').value = '';
+  $('staffDialog').showModal();
+  requestAnimationFrame(() => $('staffEmail').focus());
+}
+
+// Signing in here is the same account system as the member door; what this door adds is the
+// refusal. An account with no row in site_admins is signed straight back out, so nobody can
+// land in a half-admin session and so the header never shows the admin tools to a member.
+async function signInAsStaff(email, password) {
+  const result = await signIn(email, password);
+  if (result.admin) return result;
+  await signOutAsAdmin();
+  throw new Error('not_an_admin');
 }
 
 async function applySession(result) {
@@ -1745,12 +1768,14 @@ function bindEvents() {
   });
   $('composerAvatarBtn').addEventListener('click', () => navigate('profile'));
 
-  $('adminButton').addEventListener('click', async () => {
-    if (state.isAdmin || isSignedIn()) { await signOutUser(); return; }
+  $('authButton').addEventListener('click', async () => {
+    if (isSignedIn()) { await signOutUser(); return; }
     openAuthDialog();
   });
+  $('staffButton').addEventListener('click', () => openStaffDialog());
+
   $('authToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
-  $('adminForm').addEventListener('submit', async (event) => {
+  $('authForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const email = $('authEmail').value.trim();
     const password = $('authPassword').value;
@@ -1758,7 +1783,7 @@ function bindEvents() {
     if (authMode === 'signup' && password.length < 6) { toast('A password needs at least 6 characters.', true); return; }
     const ign = $('authIgn').value.trim();
     if (authMode === 'signup' && ign.length < 2) { toast('Type your IGN — it is the name on your posts.', true); return; }
-    const button = $('adminSubmit');
+    const button = $('authSubmit');
     const label = button.textContent;
     button.disabled = true;
     button.textContent = authMode === 'signin' ? 'Signing in…' : 'Creating…';
@@ -1766,7 +1791,7 @@ function bindEvents() {
       const result = authMode === 'signin'
         ? await signIn(email, password)
         : await signUpAccount(email, password, ign);
-      $('adminDialog').close();
+      $('authDialog').close();
       $('authPassword').value = '';
       await applySession(result);
       if (authMode === 'signin' && !result.profile) {
@@ -1774,7 +1799,7 @@ function bindEvents() {
         toast('Welcome back. Save your profile once and your IGN goes on everything you post.');
       } else {
         toast(result.admin
-          ? 'Signed in as the admin — you can publish, approve, name captains and read the activity log.'
+          ? 'Signed in. This account is also a site administrator — the Approval tab is in the menu.'
           : 'Signed in. Post, comment, tap and run the rosters of squads you captain.');
       }
     } catch (error) {
@@ -1784,8 +1809,38 @@ function bindEvents() {
       button.textContent = label;
     }
   });
-  document.querySelectorAll('[data-close-admin]').forEach(node =>
-    node.addEventListener('click', () => $('adminDialog').close()));
+  document.querySelectorAll('[data-close-auth]').forEach(node =>
+    node.addEventListener('click', () => $('authDialog').close()));
+
+  $('staffForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const email = $('staffEmail').value.trim();
+    const password = $('staffPassword').value;
+    if (!email || !password) { toast('Enter your admin email and password.', true); return; }
+    const button = $('staffSubmit');
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Checking…';
+    try {
+      const result = await signInAsStaff(email, password);
+      $('staffDialog').close();
+      $('staffPassword').value = '';
+      await applySession(result);
+      toast('Signed in as the admin — you can publish, approve, name captains and read the activity log.');
+    } catch (error) {
+      // A refusal here already ended the session, so the member tools stay closed too.
+      state.isAdmin = false;
+      state.myUserId = null;
+      state.profile = null;
+      paintHeader();
+      toast(explain(error), true);
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  });
+  document.querySelectorAll('[data-close-staff]').forEach(node =>
+    node.addEventListener('click', () => $('staffDialog').close()));
 
   window.addEventListener('hashchange', paintRoute);
 }

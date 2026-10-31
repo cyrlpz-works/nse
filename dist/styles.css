@@ -578,7 +578,10 @@ main > .notice { margin-bottom: 1.5rem; }
 
 /* ---------------- Admin mode & rank ladder ---------------- */
 .header-tools { display: flex; align-items: center; gap: 0.7rem; }
-#adminButton.is-on { border-color: var(--pink); color: var(--pink-bright); background: rgba(255, 45, 120, 0.12); }
+#authButton.is-on { border-color: var(--pink); color: var(--pink-bright); background: rgba(255, 45, 120, 0.12); }
+/* The admin door is deliberately quiet next to the member button: same row, no invitation. */
+.staff-btn { font-size: 0.74rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+.staff-btn:hover { color: var(--pink-bright); }
 .field-hint { font-size: 0.74rem; line-height: 1.45; color: var(--dim); }
 .ladder { display: grid; gap: 1px; margin-top: 0.75rem; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
 .ladder-row { display: grid; grid-template-columns: 1.3fr 0.7fr 1.2fr; gap: 0.6rem; padding: 0.6rem 0.85rem; background: var(--bg-elev); font-size: 0.8rem; }

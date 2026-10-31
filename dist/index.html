@@ -39,7 +39,8 @@
     </nav>
 
     <div class="header-tools">
-      <button class="btn btn-ghost btn-sm" type="button" id="adminButton" aria-haspopup="dialog">Sign in</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="authButton" aria-haspopup="dialog">Sign in</button>
+      <button class="link-like staff-btn" type="button" id="staffButton" aria-haspopup="dialog">Admin</button>
       <button class="header-user" type="button" id="headerUser" aria-label="Open your profile">
         <span class="avatar accent" id="headerAvatar" aria-hidden="true">?</span>
         <span class="header-user-meta">
@@ -324,12 +325,12 @@
   <div class="dialog-body" id="memberDialogBody"></div>
 </dialog>
 
-<!-- ============ SIGN IN / CREATE ACCOUNT DIALOG ============ -->
-<dialog id="adminDialog">
-  <form id="adminForm">
+<!-- ============ MEMBER SIGN IN / CREATE ACCOUNT DIALOG ============ -->
+<dialog id="authDialog">
+  <form id="authForm">
     <div class="dialog-head">
       <h2 id="authDialogTitle">Sign in</h2>
-      <button class="close-btn" type="button" data-close-admin aria-label="Close">✕</button>
+      <button class="close-btn" type="button" data-close-auth aria-label="Close">✕</button>
     </div>
     <div class="dialog-body">
       <div class="field">
@@ -350,7 +351,39 @@
     </div>
     <div class="dialog-foot">
       <button class="btn btn-ghost" type="button" id="authToggle">Create an account</button>
-      <button class="btn btn-primary" type="submit" id="adminSubmit">Sign in</button>
+      <button class="btn btn-primary" type="submit" id="authSubmit">Sign in</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ ADMIN SIGN-IN DIALOG ============ -->
+<!-- A second door with the same account system behind it. It cannot make anyone an admin: that is
+     a row in site_admins, and an account without one is turned away here. -->
+<dialog id="staffDialog">
+  <form id="staffForm">
+    <div class="dialog-head">
+      <h2 id="staffDialogTitle">Administrator sign-in</h2>
+      <button class="close-btn" type="button" data-close-staff aria-label="Close">✕</button>
+    </div>
+    <div class="dialog-body">
+      <div class="field">
+        <label for="staffEmail">Admin email</label>
+        <input class="input" id="staffEmail" type="email" autocomplete="username" maxlength="100"
+          placeholder="the address already listed as an admin">
+      </div>
+      <div class="field">
+        <label for="staffPassword">Password</label>
+        <input class="input" id="staffPassword" type="password" autocomplete="current-password" maxlength="200"
+          placeholder="at least 6 characters">
+      </div>
+      <p class="field-hint">For the people who run this site: approve posts, publish squads, name
+        captains and read the activity log. An account that is not listed as an administrator is
+        signed straight back out. Members post, comment, tap and run rosters through
+        <b>Sign in</b>.</p>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn btn-ghost" type="button" data-close-staff>Cancel</button>
+      <button class="btn btn-primary" type="submit" id="staffSubmit">Sign in as admin</button>
     </div>
   </form>
 </dialog>

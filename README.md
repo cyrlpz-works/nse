@@ -57,6 +57,11 @@ With email confirmation off, anyone can also create their own account from the s
 **Create an account** button — that is how members, captains and the leaderboard get populated.
 It does not make them an admin: only a row in `site_admins` does.
 
+There are two doors in the header, and both speak to the same account system: **Sign in** is the
+member door (sign in, sign up), **Admin** is a quiet one that signs an account in and then signs it
+straight back out again unless it is listed in `site_admins`. Neither door grants a permission —
+they only decide which words a visitor reads before typing a password.
+
 The anon key is meant to be public — it identifies the project, it does not grant access.
 Every request is checked against the policies in `supabase/schema.sql`. The **service_role**
 key is never used by this site and must never appear in it.
