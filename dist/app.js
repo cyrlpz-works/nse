@@ -967,7 +967,7 @@ let authMode = 'signin';
 function setAuthMode(mode) {
   authMode = mode;
   const signingIn = mode === 'signin';
-  $('authDialogTitle').textContent = signingIn ? 'Admin sign in' : 'Create an account';
+  $('authDialogTitle').textContent = signingIn ? 'Sign in' : 'Create an account';
   $('adminSubmit').textContent = signingIn ? 'Sign in' : 'Create account';
   $('authToggle').textContent = signingIn ? 'Create an account' : 'I already have an account';
   $('authPassword').autocomplete = signingIn ? 'current-password' : 'new-password';

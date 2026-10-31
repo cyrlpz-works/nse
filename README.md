@@ -103,6 +103,10 @@ Known limits of this design, stated plainly:
   that (applying with an account) is a normal join request.
 - A captain is one account per squad, and only an admin can move it — name a replacement or
   remove the role from the squad page.
+- Taking a captain off the roster does **not** remove the captaincy; the role lives on the squad
+  row, not on the membership row. Use "Remove as captain" for that.
+- A declined applicant cannot send a second request to the same squad from the same device: the
+  unique `(team_id, visitor_id)` index covers the row whichever status it ended in.
 - An anonymous visitor cannot see their own queued post (the database hides pending rows from
   everyone but an admin), so the confirmation is the on-screen message "Sent to the admin".
 - The 60-second pause between submissions is a per-device timer in the browser, not a server
