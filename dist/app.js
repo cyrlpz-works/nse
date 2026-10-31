@@ -3,7 +3,7 @@
 import {
   api, isConfigured, signIn, signUpAccount, signOutAsAdmin, hasAdminSession, myUserId, myProfile,
   RANK_TIERS, MP_ROLES, BR_CLASSES, EXEC_POSITIONS, CATEGORIES, youTubeId,
-} from './api.js?v=2026-10-31-10';
+} from './api.js?v=2026-10-31-11';
 
 // The ladder has no subdivisions any more: a tier is the whole rank, and a Legendary carries the
 // points that place them on the leaderboard.
@@ -1291,9 +1291,18 @@ function attachProfileForm(form) {
 
   const preview = form.querySelector('#pfAvatarPreview');
   const clearButton = form.querySelector('#pfAvatarClear');
+  let previewBlobUrl = null;
   const paintPreview = (url) => {
-    preview.innerHTML = avatarMarkup({ avatar_url: url, ign: form.querySelector('#pfIgn').value || 'You' }, 'xl');
+    // The picked file is a blob: address, which avatarMarkup refuses on purpose -- stored faces are
+    // https only. Showing it directly is what makes the new picture appear the moment it is chosen,
+    // instead of the initials a rejected address falls back to.
+    const local = typeof url === 'string' && url.startsWith('blob:');
+    preview.innerHTML = local
+      ? `<img class="avatar avatar-img xl" src="${esc(url)}" alt="">`
+      : avatarMarkup({ avatar_url: url, ign: form.querySelector('#pfIgn').value || 'You' }, 'xl');
     clearButton.hidden = !url;
+    if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    previewBlobUrl = local ? url : null;
   };
   form.querySelector('#pfAvatarInput').addEventListener('change', async (event) => {
     const file = event.target.files?.[0];

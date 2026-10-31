@@ -443,7 +443,12 @@ export const api = {
       if (/size|too large/.test(why)) throw new Error('image_too_large');
       throw new Error('upload_failed');
     }
-    return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+    const url = db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+    // A replaced avatar keeps its object path, and an unchanged address is what let the page keep
+    // showing the old face after a successful upload: the browser already had that URL decoded, so
+    // it never asked the server for the new bytes. The query is ignored by storage, but it makes
+    // the new picture a different address everywhere the stored profile is read.
+    return avatar ? `${url}?v=${Date.now()}` : url;
   },
 
   // Squad artwork goes to a folder named after the squad, with one fixed file name per kind, so
@@ -468,7 +473,10 @@ export const api = {
       if (/not allowed|policy|forbidden|unauthorized/.test(why)) throw new Error('permission_denied');
       throw new Error('upload_failed');
     }
-    return db.storage.from('team-media').getPublicUrl(path).data.publicUrl;
+    const url = db.storage.from('team-media').getPublicUrl(path).data.publicUrl;
+    // Same fixed-name, versioned-address rule as avatars: a captain replacing the badge must not be
+    // shown the badge their browser already has.
+    return `${url}?v=${Date.now()}`;
   },
 
   // One field at a time, merged with what is already stored: the row holds both images, and

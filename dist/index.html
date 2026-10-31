@@ -22,14 +22,14 @@
 <!-- The module chain is app.js -> api.js -> config.js: without these a browser discovers each
      file only after parsing the one before it. The Supabase bundle is needed at boot, so it is
      fetched beside them rather than after api.js runs. -->
-<link rel="modulepreload" href="api.js?v=2026-10-31-10">
+<link rel="modulepreload" href="api.js?v=2026-10-31-11">
 <link rel="modulepreload" href="config.js">
 <link rel="preload" href="vendor/supabase.min.js?v=2.118.0-1" as="script">
 <!-- Both numbers here -- and the same one on app.js's import of api.js -- must change whenever
      styles.css, app.js or api.js change; dev/bump.mjs rewrites all three and version.json.
      Pages caches each file for ten minutes, so without a new query a visitor can load this page
      with yesterday's script. The script then notices the stale version.json and reloads itself. -->
-<link rel="stylesheet" href="styles.css?v=2026-10-31-10">
+<link rel="stylesheet" href="styles.css?v=2026-10-31-11">
 </head>
 <body>
 <a class="sr-only" href="#main">Skip to content</a>
@@ -405,6 +405,6 @@
 </dialog>
 
 <div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>
-<script src="app.js?v=2026-10-31-10" type="module"></script>
+<script src="app.js?v=2026-10-31-11" type="module"></script>
 </body>
 </html>
