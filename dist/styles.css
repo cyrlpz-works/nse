@@ -654,9 +654,16 @@ dialog {
 }
 dialog:not([open]) { display: none; }
 dialog::backdrop { background: rgba(4, 4, 7, 0.72); backdrop-filter: blur(3px); }
+/* Three of these dialogs wrap their head, body and foot in a <form>, and a form is a plain block
+   whose minimum height is its own content -- so it refused to fit the capped dialog above, the
+   body never got a height to scroll inside, and the submit button sat clipped out of reach. The
+   form has to become the flex column as well. */
+dialog > form { display: flex; flex-direction: column; min-height: 0; }
 .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.15rem 1.35rem; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .dialog-head h2 { font-family: var(--font-display); font-size: 1rem; letter-spacing: 0.1em; text-transform: uppercase; }
-.dialog-body { padding: 1.35rem; overflow-y: auto; }
+/* min-height:0 lets the body shrink to whatever the dialog has left, which is what makes it
+   scroll; contain stops a flick at the end of the form from pushing the page behind it along too. */
+.dialog-body { padding: 1.35rem; overflow-y: auto; min-height: 0; flex: 1; overscroll-behavior: contain; }
 .dialog-foot { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; padding: 1rem 1.35rem; border-top: 1px solid var(--line); flex-shrink: 0; }
 .close-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 1.1rem; line-height: 1; }
 .close-btn:hover { color: var(--text); border-color: var(--pink); }
