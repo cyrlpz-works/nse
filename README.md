@@ -4,10 +4,10 @@ Community hub for a Call of Duty Mobile squad community: a news feed of text, sc
 clips, member profiles, squads with join requests, a points leaderboard, and an admin-run
 approval queue.
 
-The GitHub repository is still named `TRIAS-Community` and keeps that address; only the name on
-the site is Nocturnal Solace Esports. The logo lives in `dist/assets/` — `ns-mark.png` is the
-square crop used in the header and as the favicon, `ns-logo.png` is the whole artwork used for
-link previews.
+The GitHub repository is `cyrlpz-works/nse` (renamed from `TRIAS-Community`), so the site lives at
+`https://cyrlpz-works.github.io/nse/` and the old address no longer resolves. The logo lives in
+`dist/assets/` — `ns-mark.png` is the square crop used in the header and as the favicon,
+`ns-logo.png` is the whole artwork used for link previews.
 
 **Everything that writes belongs to an account.** Visitors read the site freely; to post,
 comment, tap a heart, ask to join a squad or edit a profile you sign in first. Nothing a member
@@ -20,7 +20,7 @@ The live site is static **GitHub Pages** plus a free **Supabase** project (Postg
 level security, Auth for accounts, Storage for pictures). No server code runs on Pages, and none
 is needed: the database enforces moderation, ownership and the input rules by itself.
 
-Live: https://cyrlpz-works.github.io/TRIAS-Community/
+Live: https://cyrlpz-works.github.io/nse/
 
 ## Layout
 
@@ -251,7 +251,7 @@ background without a stored value being able to break out of the declaration.
 
 GitHub Pages builds from the repository root (`build_type: legacy`); the root `index.html`
 redirects to `dist/`. Asset links inside `dist/` are relative, so the site renders correctly
-under whatever subpath the repository is published from (`/TRIAS-Community/` today). Pushing to
+under whatever subpath the repository is published from (`/nse/` today). Pushing to
 `main` is the deploy:
 
 ```bash
