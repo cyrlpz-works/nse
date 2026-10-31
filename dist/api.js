@@ -17,6 +17,9 @@ const ONLINE_WITHIN_MS = 3 * 60 * 1000;
 const URL_SHAPE = /^https:\/\/[a-z0-9][a-z0-9-]{2,62}\.supabase\.co\/?$/;
 const PUBLISHABLE_KEY = /^sb_publishable_[A-Za-z0-9_-]{16,}$/;
 const LEGACY_JWT = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
+// Squad artwork is filed under a folder named after the squad, so an id that is not one is a typo
+// or a hand-made request rather than a team -- and the bucket policy would refuse it anyway.
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // The vocabularies the database checks writes against (supabase/schema.sql). They live here so
 // the browser can explain a mistake before the request rather than after a rejected one; the
@@ -107,6 +110,13 @@ async function isSiteAdmin(db) {
 
 const clamp = (value, max) => String(value ?? '').trim().slice(0, max);
 const oneOf = (value, list, fallback = null) => (list.includes(value) ? value : fallback);
+// The same shape the database checks team_media against: a plain https address, and nothing that
+// could break out of the css url() the banner is painted with.
+const HTTPS_URL = /^https:\/\/[A-Za-z0-9._~:/?#@!$&*+,;=-]+$/;
+const mediaUrl = (value) => {
+  const text = String(value ?? '').trim();
+  return text ? (HTTPS_URL.test(text) ? text : null) : null;
+};
 
 const PROFILE_FIELDS = 'user_id,ign,avatar_url,rank,rank_points,main_mode,role_label,clan_main,clan_second,community_main,community_second,standing,exec_position,last_seen_at,created_at,updated_at';
 
@@ -419,6 +429,66 @@ export const api = {
     return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
   },
 
+  // Squad artwork goes to a folder named after the squad, with one fixed file name per kind, so
+  // uploading a new logo replaces the old one instead of leaving it on the free 1 GB plan. Which
+  // folders a given account may write is decided by the bucket policy in supabase/schema.sql --
+  // it reads the squad's captain from the teams table, so this call cannot aim itself at another
+  // team's badge no matter what it is given.
+  async uploadTeamImage(teamId, kind, blob) {
+    if (!isConfigured()) throw new Error('backend_missing');
+    if (!['logo', 'banner'].includes(kind)) throw new Error('invalid_input');
+    if (!UUID_SHAPE.test(String(teamId))) throw new Error('invalid_input');
+    const db = await client();
+    if (!(await currentUserId(db))) throw new Error('sign_in_required');
+    const path = `${teamId}/${kind}.jpg`;
+    const uploaded = await db.storage.from('team-media').upload(path, blob, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    });
+    if (uploaded.error) {
+      const why = String(uploaded.error.message || '').toLowerCase();
+      if (/size|too large/.test(why)) throw new Error('image_too_large');
+      if (/not allowed|policy|forbidden|unauthorized/.test(why)) throw new Error('permission_denied');
+      throw new Error('upload_failed');
+    }
+    return db.storage.from('team-media').getPublicUrl(path).data.publicUrl;
+  },
+
+  // One field at a time, merged with what is already stored: the row holds both images, and
+  // writing only the logo must not blank the banner. Changing a squad's name, minimum rank or
+  // status is not possible through this call at all -- those columns live on `teams`.
+  async saveTeamMedia(teamId, patch) {
+    if (!isConfigured()) throw new Error('backend_missing');
+    if (!UUID_SHAPE.test(String(teamId))) throw new Error('invalid_input');
+    const kinds = ['logo_url', 'banner_url'].filter(key => key in patch);
+    if (!kinds.length) throw new Error('invalid_input');
+    const values = {};
+    for (const key of kinds) {
+      const next = patch[key];
+      if (next === null || next === '') {
+        values[key] = null;
+        continue;
+      }
+      const url = mediaUrl(next);
+      if (!url) throw new Error('invalid_input');
+      values[key] = url;
+    }
+    const db = await client();
+    const uid = await currentUserId(db);
+    if (!uid) throw new Error('sign_in_required');
+    const found = await run(db.from('team_media').select('logo_url,banner_url').eq('team_id', teamId).limit(1));
+    const stored = found.data?.[0] || {};
+    await run(db.from('team_media').upsert({
+      team_id: teamId,
+      logo_url: values.logo_url ?? stored.logo_url ?? null,
+      banner_url: values.banner_url ?? stored.banner_url ?? null,
+      updated_by: uid,
+      updated_at: new Date().toISOString(),
+    }));
+    await logActivity('team_media_update', `${teamId} ${kinds.map(key => (values[key] ? 'set' : 'cleared')).join(', ')}`);
+    return { ok: true };
+  },
+
   /* ---------------- feed ---------------- */
   async posts({ offset = 0, limit = 20, mine = false } = {}) {
     const db = await client();
@@ -620,6 +690,7 @@ export const api = {
     const teams = result.data || [];
     const ids = teams.map(team => team.id);
     let entries = [];
+    let artwork = [];
     if (ids.length) {
       const found = await run(db.from('join_requests')
         .select('id,team_id,nickname,status,user_id,created_at,profiles(user_id,ign,avatar_url,rank)')
@@ -627,8 +698,19 @@ export const api = {
         .order('created_at')
         .limit(2000));
       entries = found.data || [];
+      // Awaited without run(): a project that has not yet been given the team_media table answers
+      // with a missing relation, and a squad page with no artwork is worth more than a squad page
+      // that refuses to load.
+      const media = await db.from('team_media')
+        .select('team_id,logo_url,banner_url')
+        .in('team_id', ids)
+        .limit(ids.length);
+      artwork = media.data || [];
     }
     return teams.map(team => {
+      const media = artwork.find(row => row.team_id === team.id);
+      team.logo_url = media?.logo_url || null;
+      team.banner_url = media?.banner_url || null;
       const mine = entries.filter(entry => entry.team_id === team.id);
       const founder = { id: null, name: team.leader, role: 'Founder', user_id: null };
       const members = mine

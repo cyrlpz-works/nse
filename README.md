@@ -7,7 +7,8 @@ approval queue.
 **Everything that writes belongs to an account.** Visitors read the site freely; to post,
 comment, tap a heart, ask to join a squad or edit a profile you sign in first. Nothing a member
 publishes reaches the feed until the site admin approves it, so nudity and spam stop at the
-Approval page. Squad captains run their own roster and nothing else.
+Approval page. Squad captains run their own roster and choose their own squad logo and banner --
+and nothing else.
 
 The live site is static **GitHub Pages** plus a free **Supabase** project (Postgres with row
 level security, Auth for accounts, Storage for pictures). No server code runs on Pages, and none
@@ -85,7 +86,7 @@ there are no error toasts.
 | --- | --- |
 | Home | stats, recruiting squads, the top five of the leaderboard, who is online, latest posts |
 | Feed | the composer (text, screenshot, YouTube link) and every approved post |
-| Squads | squad cards, filters, the squad page with its roster and applications |
+| Squads | squad cards, filters, the squad page with its roster, applications and its own logo and banner |
 | Members | every account, searchable by IGN; tap a card for that player's profile |
 | Ranks | the points leaderboard |
 | Profile | your own account: face, IGN, rank and points, mode and role, standing, groups |
@@ -115,16 +116,20 @@ second community**.
 | Heart a post or a member several times | anyone signed in, once per account per target | `likes (post_id, user_id)` and `member_hearts (from_user_id, to_user_id)` are unique; a `taps` counter grows |
 | Publish, edit or remove a squad | the site admin only | RLS: `teams` writes require `is_site_admin()` |
 | Accept, decline, remove or name a roster row | that squad's captain | RLS: `is_captain_of(team_id)` + `decided_by = auth.uid()` |
+| Set a squad's logo and banner | that squad's captain, or the admin | RLS: `team_media` writes require `is_captain_of(team_id)`; the `team-media` bucket folder is the squad id |
 | Leave a squad you are in | you | RLS: `joins own leave` narrows it to your own accepted row |
 | Join a squad | you, if your profile's rank reaches its minimum | RLS: `joins apply` compares `rank_position(profiles.rank)` with `teams.required_rank` |
 | Name a squad's captain | the site admin | RLS: it is a `teams` update |
 | Add someone to `site_admins` | an existing site admin | RLS: `admins admin only` |
 | Read the activity log | the site admin | RLS: `activity_log` is admin-readable, member-insertable |
 
-A captain therefore cannot edit their squad's card, approve a post, or touch another squad: the
-only rows they may update are join requests of the one team that lists their account, and the
-squad record itself is writable only by an admin. That is what keeps one captain out of another
-captain's roster.
+A captain therefore cannot rewrite a squad's card, approve a post, or touch another squad: the
+rows they may update are the join requests of the one team that lists their account, plus that
+team's two pictures. Those pictures live in their own table, `public.team_media`, for exactly this
+reason -- row level security can filter which ROWS an account updates but never which COLUMNS, so
+a captain write policy on `teams` would have handed that captain the squad's name and its minimum
+rank along with the logo. The squad record itself stays writable only by an admin, which is what
+keeps one captain out of another captain's roster.
 
 A rename needs no repair pass. The feed, the comments, the members page and the leaderboard all
 read the author's live `profiles` row, so changing your IGN in Profile changes it everywhere at
@@ -177,9 +182,10 @@ database — a Battle Royale class cannot be saved on a Multiplayer profile.
 | Profiles: IGN, avatar, rank, points, mode, role, standing, groups | `public.profiles` | yes — this is what the feed reads |
 | Member hearts | `public.member_hearts` | yes |
 | Squads, join requests, captains | `public.teams`, `public.join_requests` | yes |
+| A squad's logo and banner | `public.team_media` (two URLs; the files are in Storage) | yes |
 | Who runs the site | `public.site_admins` | yes, read by the policies |
 | Activity log | `public.activity_log` | admin-readable only |
-| Picture files | Storage buckets `avatars` and `post-images` | public read, own-folder write |
+| Picture files | Storage buckets `avatars`, `post-images` and `team-media` | public read; the first two are own-folder write, `team-media` is folder-per-squad and writable by that squad's captain |
 | Session | `localStorage` (Supabase auth token) | proves which account this browser is |
 | Submission timer | `localStorage` (`jt.last.*`) | courtesy cooldown only |
 
@@ -191,15 +197,20 @@ characters, or an image, or a clip link), clip links are YouTube only (`youtube.
 `youtu.be/`), comments are 2–300 characters, the category whitelist, the rank ladder, IGN length
 (2–24), executive requires a position, Legendary requires points, hearts and taps are counted
 per account, squad name length and uniqueness, `slot_count` between 2 and 12, one application
-per account per squad.
+per account per squad. A squad's `logo_url` / `banner_url` must be a plain `https://` address with
+no spaces, quotes or parentheses in it, which is also what lets the banner be painted as a CSS
+background without a stored value being able to break out of the declaration.
 
 ## Known limits, stated plainly
 
 - **Pictures cost storage.** The free plan gives 1 GB in total. Avatars are resized to 256 px
   and stored at one fixed path per account, so changing your picture replaces it instead of
-  piling up. Post screenshots are resized to 1200 px but each one is its own object, and
-  deleting the post does not delete the file — the `post-images` bucket is pruned from the
-  Supabase Storage dashboard when you want the space back.
+  piling up. Squad artwork is the same idea per squad: the logo is kept at 256 px and the banner
+  at 1600 px, each at one fixed path inside a folder named after the squad, so a captain
+  re-uploading replaces the file. Post screenshots are resized to 1200 px but each one is its own
+  object, and deleting the post does not delete the file — the `post-images` bucket is pruned from
+  the Supabase Storage dashboard when you want the space back. Deleting a squad removes its
+  `team_media` row (cascade) but leaves its two files in the bucket.
 - **"Online" is a heartbeat**, not a connection: the page stamps `last_seen_at` once a minute
   and anyone seen in the last three minutes shows as online. A browser left open on a table
   looks like a person.
@@ -252,3 +263,6 @@ it, and that code has been removed. Nothing in `dist/` expects a same-origin API
 - Writes never ask the API to echo the row back: a queued row is deliberately invisible to its
   author, and PostgREST reports an invisible `RETURNING` as a permission failure.
 - Theme tokens live at the top of `styles.css` (`--pink`, `--bg`, …).
+- `node --check` reports success for a `dist/*.js` file that no browser can load: it parses these
+  as CommonJS and never reaches the module grammar. Check them the way the page does, with
+  `node --experimental-vm-modules dev/parse-check.mjs dist/app.js`.

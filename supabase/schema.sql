@@ -170,6 +170,19 @@ create table if not exists public.teams (
 );
 create index if not exists teams_created_idx on public.teams (created_at desc);
 
+-- Squad artwork: the logo on a squad's cards and the banner behind the top of its page. These two
+-- columns live in their own table rather than on `teams` because row level security can limit which
+-- ROWS a captain updates, never which COLUMNS. A captain update policy on `teams` would hand that
+-- captain the squad's name, its minimum rank and its status as well -- and a minimum rank is what
+-- decides who may apply. Split out, the widest thing a captain can write is a picture.
+create table if not exists public.team_media (
+  team_id uuid primary key references public.teams (id) on delete cascade,
+  logo_url text check (logo_url is null or logo_url ~ '^https://[A-Za-z0-9._~:/?#@!$&*+,;=-]+$'),
+  banner_url text check (banner_url is null or banner_url ~ '^https://[A-Za-z0-9._~:/?#@!$&*+,;=-]+$'),
+  updated_by uuid,
+  updated_at timestamptz not null default now()
+);
+
 -- One row per application or membership. 'pending' = applied, 'accepted' = in the squad,
 -- 'rejected' = declined, removed, or left. Both live in one table because every captain action is
 -- then a plain update, and a row level rule can only inspect an update, not an intention.
@@ -210,7 +223,7 @@ create table if not exists public.activity_log (
     'sign_in', 'sign_out', 'profile_update', 'post_submit', 'comment_submit', 'post_tap',
     'member_heart', 'join_apply', 'join_accept', 'join_leave', 'post_approve', 'post_reject',
     'record_delete', 'team_create', 'team_delete', 'captain_assign', 'captain_remove',
-    'member_remove')),
+    'member_remove', 'team_media_update')),
   detail text check (detail is null or char_length(detail) <= 200),
   created_at timestamptz not null default now()
 );
@@ -354,7 +367,7 @@ alter table public.activity_log add constraint activity_log_action_check check (
   'sign_in', 'sign_out', 'profile_update', 'post_submit', 'comment_submit', 'post_tap',
   'member_heart', 'join_apply', 'join_accept', 'join_leave', 'post_approve', 'post_reject',
   'record_delete', 'team_create', 'team_delete', 'captain_assign', 'captain_remove',
-  'member_remove'));
+  'member_remove', 'team_media_update'));
 
 -- Uniqueness now follows the account, not the device: a member can apply to a squad from their
 -- phone and their PC, tap a post once per account, and heart a person once per account. Postgres
@@ -391,6 +404,7 @@ alter table public.posts enable row level security;
 alter table public.comments enable row level security;
 alter table public.likes enable row level security;
 alter table public.teams enable row level security;
+alter table public.team_media enable row level security;
 alter table public.join_requests enable row level security;
 alter table public.member_hearts enable row level security;
 alter table public.activity_log enable row level security;
@@ -401,7 +415,7 @@ alter table public.site_admins enable row level security;
 -- an account's own writes, so they are granted to authenticated only -- an anonymous key gets read.
 grant usage on schema public to anon, authenticated;
 grant select on public.profiles, public.posts, public.comments, public.likes, public.teams,
-  public.join_requests, public.member_hearts, public.site_admins to anon, authenticated;
+  public.join_requests, public.member_hearts, public.site_admins, public.team_media to anon, authenticated;
 grant select on public.activity_log to authenticated;
 grant insert on public.profiles, public.posts, public.comments, public.likes,
   public.member_hearts, public.activity_log to authenticated;
@@ -412,6 +426,8 @@ grant delete on public.profiles, public.posts, public.comments, public.likes,
 -- roster is an account's act. Squads themselves are written only by an admin, narrowed below.
 grant insert, update, delete on public.join_requests to authenticated;
 grant insert, update, delete on public.teams to authenticated;
+-- A captain's two image fields, nothing more.
+grant insert, update, delete on public.team_media to authenticated;
 grant execute on function public.is_site_admin() to anon, authenticated;
 grant execute on function public.is_captain_of(uuid) to anon, authenticated;
 grant execute on function public.rank_position(text) to anon, authenticated;
@@ -501,10 +517,20 @@ create policy "likes admin" on public.likes
   for all using (public.is_site_admin()) with check (public.is_site_admin());
 
 -- Squad cards are public; only an admin creates, edits, deletes or names a captain. A captain's
--- power is the roster (below), never the squad record itself -- that is what keeps one captain
--- from editing another team.
+-- power is the roster (below) and their own squad's artwork (below that), never the squad record
+-- itself -- that is what keeps one captain from editing another team.
 create policy "teams readable" on public.teams for select using (true);
 create policy "teams admin write" on public.teams
+  for all using (public.is_site_admin()) with check (public.is_site_admin());
+
+-- Artwork. Anyone reads it, because it is what a squad's card and header are drawn from. Writing it
+-- is the captain of that squad -- or an admin, so a squad whose captain has gone quiet can still be
+-- fixed. Both rules ask the database who owns the squad rather than trusting the request, so
+-- renaming a captain in `teams` is the only way to move this power, and that is an admin's act.
+create policy "team media readable" on public.team_media for select using (true);
+create policy "team media captain write" on public.team_media
+  for all using (public.is_captain_of(team_id)) with check (public.is_captain_of(team_id));
+create policy "team media admin write" on public.team_media
   for all using (public.is_site_admin()) with check (public.is_site_admin());
 
 -- Roster. Members are public so anyone can see who is in a squad. An application that has not
@@ -589,13 +615,15 @@ create policy "admins admin only" on public.site_admins
   for all using (public.is_site_admin()) with check (public.is_site_admin());
 
 -- ---------------- uploads ----------------
--- Two public buckets: profile pictures and post screenshots. Free tier gives 1 GB total, which is
--- why the browser downscales before uploading (see dist/app.js). A member may write only inside a
--- folder named after their own account id, so nobody can overwrite someone else's avatar, and the
--- public-read rule is what makes the stored URL work in an <img> tag.
+-- Three public buckets: profile pictures, post screenshots and squad artwork. Free tier gives
+-- 1 GB total, which is why the browser downscales before uploading (see dist/app.js). A member may
+-- write only inside a folder named after their own account id, so nobody can overwrite someone
+-- else's avatar, and the public-read rule is what makes the stored URL work in an <img> tag.
 insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true)
   on conflict (id) do update set public = true;
 insert into storage.buckets (id, name, public) values ('post-images', 'post-images', true)
+  on conflict (id) do update set public = true;
+insert into storage.buckets (id, name, public) values ('team-media', 'team-media', true)
   on conflict (id) do update set public = true;
 
 -- Two policies per bucket, dropped by name first so a re-run recreates them instead of colliding.
@@ -603,6 +631,9 @@ drop policy if exists "avatars public read" on storage.objects;
 drop policy if exists "avatars own write" on storage.objects;
 drop policy if exists "post-images public read" on storage.objects;
 drop policy if exists "post-images own write" on storage.objects;
+drop policy if exists "team-media public read" on storage.objects;
+drop policy if exists "team-media captain write" on storage.objects;
+drop policy if exists "team-media admin write" on storage.objects;
 
 -- `storage.foldername(name)` splits the object path, so its first segment is the folder the file
 -- landed in -- which the site always names after the account doing the uploading.
@@ -624,6 +655,35 @@ create policy "post-images own write" on storage.objects
     bucket_id = 'post-images' and (storage.foldername(name))[1] = auth.uid()::text
   );
 
+-- Squad artwork is filed by squad, not by person: the first folder segment is the team's id and the
+-- file is always `logo.jpg` or `banner.jpg`. So a re-upload replaces the picture instead of leaving
+-- another copy behind on a 1 GB plan, and when the admin hands a squad to a new captain that captain
+-- can replace the badge the old one chose. The permission still comes from the squad row -- the
+-- folder name is only looked up, never trusted, because `teams.captain_user_id` is compared with
+-- auth.uid() the same way every other captain rule does.
+create policy "team-media public read" on storage.objects
+  for select using (bucket_id = 'team-media');
+create policy "team-media captain write" on storage.objects
+  for all to authenticated using (
+    bucket_id = 'team-media'
+    and exists (
+      select 1 from public.teams t
+      where t.id::text = (storage.foldername(name))[1] and t.captain_user_id = auth.uid()
+    )
+  ) with check (
+    bucket_id = 'team-media'
+    and exists (
+      select 1 from public.teams t
+      where t.id::text = (storage.foldername(name))[1] and t.captain_user_id = auth.uid()
+    )
+  );
+create policy "team-media admin write" on storage.objects
+  for all to authenticated using (
+    bucket_id = 'team-media' and public.is_site_admin()
+  ) with check (
+    bucket_id = 'team-media' and public.is_site_admin()
+  );
+
 -- ---------------- one-time bootstrap ----------------
 -- Name yourself admin, or the Approval tab stays hidden and nothing can be published.
 -- Look your account id up first:   select id, email from auth.users;
@@ -638,3 +698,8 @@ create policy "post-images own write" on storage.objects
 --
 -- Every profile row is created by the site on the member's first sign-in, from the IGN they type.
 -- Nothing seeds them here on purpose: the directory should only ever hold real people.
+
+-- The API layer keeps a cached view of the schema, so a table this run added -- team_media, on the
+-- first run -- is invisible to the site until it reloads. Without this line the squad page reports
+-- "database refused that" for artwork that is really there.
+notify pgrst, 'reload schema';

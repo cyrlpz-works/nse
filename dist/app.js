@@ -13,6 +13,9 @@ const MAX_POST = 1200;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 const AVATAR_EDGE = 256;
 const POST_IMAGE_EDGE = 1200;
+// A squad banner is the one picture that has to fill a wide strip, so it keeps more pixels than a
+// post screenshot does. Still resized before upload: the free storage plan is 1 GB for the site.
+const BANNER_EDGE = 1600;
 
 const state = {
   route: 'home',
@@ -78,6 +81,15 @@ function avatarMarkup(person, extraClass = '') {
   return `<span class="avatar ${extraClass}" aria-hidden="true">${esc(initials(name))}</span>`;
 }
 
+// A squad's badge: the picture its captain uploaded, or the letters the squad was created with.
+// Every squad surface -- the cards, the home strip, the page head -- draws through this one, so an
+// uploaded logo cannot appear in one place and be missing in another.
+function teamLogoMarkup(team, extraClass = '') {
+  const url = safeUrl(team?.logo_url);
+  if (url) return `<img class="avatar avatar-img team-logo ${extraClass}" src="${esc(url)}" alt="" loading="lazy">`;
+  return `<span class="avatar team-logo ${extraClass}" aria-hidden="true">${esc(team?.logo || '?')}</span>`;
+}
+
 function timeAgo(iso) {
   const then = new Date(iso).getTime();
   if (!Number.isFinite(then)) return 'recently';
@@ -121,7 +133,7 @@ const ERRORS = {
   legendary_points: 'Legendary needs your ranked points, or the leaderboard has nothing to place you by.',
   video_not_youtube: 'Only a YouTube link works here — youtube.com/watch?v=… or youtu.be/…',
   image_too_large: 'That image is too big. Use a screenshot under 8 MB.',
-  upload_failed: 'The image could not be uploaded. Try again, or post without it.',
+  upload_failed: 'The image could not be uploaded. Try again, or continue without it.',
   image_failed: 'The browser could not read that image. Try a PNG or JPG screenshot.',
   account_exists: 'That email already has an account. Sign in instead of creating one.',
   email_invalid: 'That email address was refused. Use a real address — a gmail or similar, not a made-up domain.',
@@ -353,7 +365,7 @@ function teamCard(team) {
   const recruiting = team.status === 'recruiting';
   button.innerHTML = `
     <div class="team-card-top">
-      <span class="avatar accent" aria-hidden="true">${esc(team.logo)}</span>
+      ${teamLogoMarkup(team, 'accent')}
       <span class="badge ${recruiting ? 'ok' : 'warn'}">${recruiting ? 'Recruiting' : 'Full'}</span>
     </div>
     <h3>${esc(team.name)}</h3>
@@ -831,7 +843,7 @@ function renderTeamDetail(teamId) {
   host.innerHTML = `
     <div class="banner"></div>
     <div class="panel-head">
-      <span class="avatar" aria-hidden="true">${esc(team.logo)}</span>
+      ${teamLogoMarkup(team)}
       <div class="panel-head-text">
         <h2 id="teamDetailName">${esc(team.name)}</h2>
         <p>${team.captain_nick ? `Captain: <strong style="color:var(--text)">${esc(team.captain_nick)}</strong>` : `Led by ${esc(team.leader)}`}</p>
@@ -906,10 +918,20 @@ function renderTeamDetail(teamId) {
               <button class="btn btn-ghost btn-sm" type="button" data-decide="rejected:${esc(entry.id)}">Remove</button>
             </div>
           </div>`).join('')}` : ''}` : ''}
+      ${manages ? `
+        <div class="divider"></div>
+        <h3 class="panel-sub">Squad logo and banner</h3>
+        <p class="field-hint">${isCaptainHere
+          ? 'This is the one part of a squad a captain edits: its two pictures.'
+          : 'You are changing this squad’s artwork as the site admin.'} Its name, minimum rank, mode and status are not editable here — those belong to the admin, which is what stops one captain from rewriting another squad. Both pictures are resized in your browser before they upload, so the site stays inside the free storage limit.</p>
+        <div class="field-row">
+          ${artworkFieldMarkup('logo', 'Squad logo', team.logo_url, 'Square works best. It replaces the letters on every squad card and in this page’s head, and is kept at 256 px.')}
+          ${artworkFieldMarkup('banner', 'Banner behind the squad', team.banner_url, 'A wide picture, shown across the top of this page behind the squad name. Kept at 1600 px.')}
+        </div>` : ''}
       ${state.isAdmin ? `
         <div class="divider"></div>
         <h3 class="panel-sub">Assign the captain</h3>
-        <p class="field-hint">Only you can hand a squad to someone. A captain manages that one roster — applications, members — and nothing else. They need an account of their own, which they get from “Create an account” in the sign-in dialog.</p>
+        <p class="field-hint">Only you can hand a squad to someone. A captain runs that one roster — applications, members — and may put their own logo and banner on it. Nothing else on the squad is theirs to change. They need an account of their own, which they get from “Create an account” in the sign-in dialog.</p>
         ${team.captain_user_id ? `
         <div class="queue-item">
           <div class="queue-text"><p class="queue-byline"><b>${esc(currentCaptainName)}</b> · holds the captain role now</p></div>
@@ -933,6 +955,82 @@ function renderTeamDetail(teamId) {
         <p class="field-hint">Removes the squad and its applications. This cannot be undone from the site.</p>
         <button class="btn btn-ghost btn-block danger" type="button" data-delete-team="${esc(team.id)}">Remove team</button>` : ''}
     </div>`;
+  paintTeamBanner(host, team);
+  if (manages) attachTeamArtwork(host, team);
+}
+
+function artworkFieldMarkup(kind, label, current, hint) {
+  const inputId = `teamArt-${kind}`;
+  return `
+    <div class="field">
+      <label for="${inputId}">${esc(label)}</label>
+      <div class="avatar-picker">
+        <label class="file-btn" for="${inputId}">
+          <input class="sr-only" type="file" id="${inputId}" data-artwork-input="${kind}" accept="image/png,image/jpeg,image/webp">
+          ${current ? 'Replace picture' : 'Choose picture'}
+        </label>
+        <button class="btn btn-ghost btn-sm" type="button" data-artwork-clear="${kind}" ${current ? '' : 'hidden'}>Remove</button>
+      </div>
+      <p class="field-hint" data-artwork-hint="${kind}">${hint}</p>
+    </div>`;
+}
+
+// The banner is the squad's own picture, painted behind the page head. Assigned through the style
+// property rather than written into the markup: this value ends up inside a css declaration, and
+// JSON.stringify is what keeps a stray quote or parenthesis there from closing the url() early.
+function paintTeamBanner(host, team) {
+  const banner = host.querySelector('.banner');
+  const url = safeUrl(team.banner_url);
+  if (!banner || !url) return;
+  banner.classList.add('has-artwork');
+  banner.style.backgroundImage = `linear-gradient(rgba(8, 8, 11, 0.42), rgba(8, 8, 11, 0.86)), url(${JSON.stringify(url)})`;
+}
+
+// Choosing a file uploads it immediately: the squad already exists (this is its own page), the
+// object name is fixed per kind so a re-upload replaces the old file, and a step that only
+// "staged" the picture would still have to survive a refresh to mean anything.
+function attachTeamArtwork(host, team) {
+  const refresh = async () => {
+    await loadTeams();
+    renderTeamDetail(team.id);
+  };
+
+  host.querySelectorAll('[data-artwork-input]').forEach(input => {
+    const kind = input.dataset.artworkInput;
+    input.addEventListener('change', async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      const hint = host.querySelector(`[data-artwork-hint="${kind}"]`);
+      const original = hint.textContent;
+      hint.textContent = 'Resizing and uploading…';
+      try {
+        const blob = await toJpeg(file, kind === 'logo' ? AVATAR_EDGE : BANNER_EDGE, 0.85);
+        const url = await api.uploadTeamImage(team.id, kind, blob);
+        await api.saveTeamMedia(team.id, { [`${kind}_url`]: url });
+        await refresh();
+        toast(kind === 'logo' ? 'Squad logo updated.' : 'Squad banner updated.');
+      } catch (error) {
+        hint.textContent = original;
+        toast(explain(error), true);
+      }
+    });
+  });
+
+  host.querySelectorAll('[data-artwork-clear]').forEach(button => {
+    const kind = button.dataset.artworkClear;
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        await api.saveTeamMedia(team.id, { [`${kind}_url`]: null });
+        await refresh();
+        toast(kind === 'logo' ? 'Logo removed — the squad’s letters are back.' : 'Banner removed — the pink strip is back.');
+      } catch (error) {
+        button.disabled = false;
+        toast(explain(error), true);
+      }
+    });
+  });
 }
 
 /* ---------------- profile ---------------- */
