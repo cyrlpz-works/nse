@@ -1,7 +1,9 @@
+// The query on this import is replaced together with the ?v= numbers in index.html: a browser that
+// cached app.js must not keep importing yesterday's api.js from its ten-minute cache.
 import {
   api, isConfigured, signIn, signUpAccount, signOutAsAdmin, hasAdminSession, myUserId, myProfile,
   RANK_TIERS, MP_ROLES, BR_CLASSES, EXEC_POSITIONS, CATEGORIES, youTubeId,
-} from './api.js';
+} from './api.js?v=2026-10-31-9';
 
 // The ladder has no subdivisions any more: a tier is the whole rank, and a Legendary carries the
 // points that place them on the leaderboard.

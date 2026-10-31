@@ -83,8 +83,9 @@ create table if not exists public.profiles (
   standing text not null default 'member' check (standing in ('member', 'executive')),
   exec_position text check (
     exec_position is null or exec_position in (
-      'Founder', 'Co-Founder', 'Leader', 'Co-Leader', 'Officer', 'Elder',
-      'Recruiter', 'Strategist', 'Trainer')
+      'Founder', 'Co-Founder', 'Clan Master', 'Vice Clan Master', 'Secretary',
+      'Head Admin', 'Admin', 'BR Handler', 'MP Handler', 'Monitoring Admin',
+      'Disciplinary Admin', 'Recruiter', 'Editor')
   ),
   last_seen_at timestamptz,
   created_at timestamptz not null default now(),
@@ -350,6 +351,16 @@ alter table public.teams add constraint teams_required_rank_check
   check (public.rank_position(required_rank) between 0 and 7);
 alter table public.likes drop constraint if exists likes_taps_check;
 alter table public.likes add constraint likes_taps_check check (taps between 0 and 1000);
+-- The clan's position titles were replaced, and an existing project still carries the check from
+-- its original create table, which only knows the old ones. Restate the rule so a project that
+-- already ran this file accepts the new list too.
+alter table public.profiles drop constraint if exists profiles_exec_position_check;
+alter table public.profiles add constraint profiles_exec_position_check check (
+  exec_position is null or exec_position in (
+    'Founder', 'Co-Founder', 'Clan Master', 'Vice Clan Master', 'Secretary',
+    'Head Admin', 'Admin', 'BR Handler', 'MP Handler', 'Monitoring Admin',
+    'Disciplinary Admin', 'Recruiter', 'Editor')
+);
 -- The queue states, stated here too so a project whose tables predate this file cannot drift: an
 -- 'archived'-or-typo status would otherwise be invisible to the Approval tab and unapprovable.
 alter table public.posts drop constraint if exists posts_status_check;

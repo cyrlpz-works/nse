@@ -34,7 +34,11 @@ export const BR_CLASSES = [
   'Smoke Bomber', 'Spotter', 'Tactical Bouncer', 'Tactical Mirror', 'Teleporter', 'Shock Stick',
   'Toxic Overload', 'Trap Master', 'Trickster',
 ];
-export const EXEC_POSITIONS = ['Founder', 'Co-Founder', 'Leader', 'Co-Leader', 'Officer', 'Elder', 'Recruiter', 'Strategist', 'Trainer'];
+export const EXEC_POSITIONS = [
+  'Founder', 'Co-Founder', 'Clan Master', 'Vice Clan Master', 'Secretary', 'Head Admin',
+  'Admin', 'BR Handler', 'MP Handler', 'Monitoring Admin', 'Disciplinary Admin', 'Recruiter',
+  'Editor',
+];
 export const CATEGORIES = ['General', 'Multiplayer', 'Battle Royale', 'Ranked', 'Loadouts',
   'Tips & Guides', 'Looking for Team', 'Team Recruitment'];
 export const rankPosition = (tier) => RANK_TIERS.indexOf(tier);

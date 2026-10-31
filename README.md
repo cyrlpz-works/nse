@@ -114,9 +114,9 @@ A profile is: an **avatar** (uploaded, resized in the browser before it is store
 — the nickname that appears on your posts — a **rank tier** plus optional **rank points**
 (points are required for Legendary because they are what the leaderboard sorts by), a **main
 mode** with one role from that mode, a **standing** of member or executive (an executive picks a
-position: Founder, Co-Founder, Leader, Co-Leader, Officer, Elder, Recruiter, Strategist,
-Trainer), and two groups each with a second: **main clan / second clan** and **main community /
-second community**.
+position: Founder, Co-Founder, Clan Master, Vice Clan Master, Secretary, Head Admin, Admin,
+BR Handler, MP Handler, Monitoring Admin, Disciplinary Admin, Recruiter, Editor), and two groups
+each with a second: **main clan / second clan** and **main community / second community**.
 
 | Action | Who can do it | Where it is enforced |
 | --- | --- | --- |
