@@ -38,6 +38,10 @@ const state = {
   loadingComments: new Set(),
   offline: false,
   isAdmin: false,
+  // The account itself may run the site while it sits in the member view, which is what the
+  // member door gives even the admin's own account. The admin door is the only thing that turns
+  // this into the admin view.
+  isAdminAccount: false,
   myUserId: null,
   profile: null,
   // What the composer is holding: an uploaded screenshot URL and a video link. The file itself is
@@ -242,15 +246,35 @@ function paintHeader() {
 function paintAdminUi() {
   const button = $('authButton');
   const signedInAs = state.isAdmin ? 'admin' : isSignedIn() ? 'member' : 'guest';
-  button.textContent = signedInAs === 'admin' ? 'Signed in as admin' : signedInAs === 'member' ? 'Signed in' : 'Sign in';
+  // The admin header has one more tab and a second door, so it takes the two-row layout earlier.
+  document.querySelector('.site-header').classList.toggle('is-admin', state.isAdmin);
+  // The admin's account says which view it is in, because the same account can be in either one.
+  button.textContent = signedInAs === 'admin'
+    ? 'Signed in as admin'
+    : signedInAs === 'member'
+      ? (state.isAdminAccount ? 'Signed in as member' : 'Signed in')
+      : 'Sign in';
   button.classList.toggle('is-on', signedInAs !== 'guest');
   button.setAttribute('aria-label', signedInAs === 'admin'
-    ? 'Signed in as the site admin. Click to sign out'
+    ? 'Signed in with the admin view. Click to sign out'
     : signedInAs === 'member'
       ? 'Signed in with your own account. Click to sign out'
       : 'Sign in with your own account to post, comment and join squads');
-  // One session per browser, so the admin door closes as soon as any account is signed in here.
-  $('staffButton').hidden = signedInAs !== 'guest';
+  // One button, both directions. From the admin view it drops into the member view without asking
+  // for a password (that only hides tools); coming back is the admin door, which does ask. A plain
+  // member is not offered a door that would only sign them back out.
+  const staffButton = $('staffButton');
+  if (signedInAs === 'admin') {
+    staffButton.hidden = false;
+    staffButton.textContent = 'Member view';
+    staffButton.setAttribute('aria-label', 'Switch to the member view. Admin sign-in brings the admin tools back.');
+  } else {
+    staffButton.hidden = isSignedIn() && !state.isAdminAccount;
+    staffButton.textContent = 'Admin sign-in';
+    staffButton.setAttribute('aria-label', isSignedIn()
+      ? 'Open the admin view with an administrator account. This replaces the member session here'
+      : 'Sign in as a site administrator to approve posts and publish squads');
+  }
 
   $('approvalNav').hidden = !state.isAdmin;
   $('openCreateTeam').hidden = state.offline || !state.isAdmin;
@@ -521,7 +545,9 @@ async function renderModeration() {
     if (count) count.textContent = '';
     list.replaceChildren(emptyBlock(state.offline
       ? 'The database is unreachable, so nothing can be reviewed right now.'
-      : 'The approval queue belongs to the site admin. Sign in with that account to open it.'));
+      : state.isAdminAccount
+        ? 'You are signed in to the member view. Use Admin sign-in in the header to open the approval queue.'
+        : 'The approval queue belongs to the site admin. Sign in with that account to open it.'));
     return;
   }
   list.replaceChildren(skeletonBlock(1));
@@ -568,7 +594,9 @@ async function renderAdminConsole() {
   if (state.offline || !state.isAdmin) {
     statsHost.innerHTML = '';
     count.textContent = '';
-    membersHost.replaceChildren(emptyBlock('Sign in as the site admin to see the member list and the activity log.'));
+    membersHost.replaceChildren(emptyBlock(state.isAdminAccount
+      ? 'You are signed in to the member view. Use Admin sign-in in the header for the member list and the activity log.'
+      : 'Sign in as the site admin to see the member list and the activity log.'));
     logHost.replaceChildren();
     return;
   }
@@ -1094,7 +1122,11 @@ function renderProfile() {
         <section>
           <h3>This account</h3>
           <p>Signed in as <strong style="color:var(--text)">${esc(p.ign)}</strong>.<br>
-          ${state.isAdmin ? 'This account is a <strong style="color:var(--text)">site admin</strong>: it approves posts, publishes squads and names captains.' : 'This account is a member.'}
+          ${state.isAdmin
+            ? 'This account is in the <strong style="color:var(--text)">admin view</strong>: it approves posts, publishes squads and names captains.'
+            : state.isAdminAccount
+              ? 'This account is <strong style="color:var(--text)">signed in as a member</strong>. Use <strong style="color:var(--text)">Admin sign-in</strong> in the header to switch to the admin view.'
+              : 'This account is a member.'}
           ${p.last_seen_at ? `<br>Last seen ${esc(timeAgo(p.last_seen_at))}.` : ''}</p>
         </section>
       </div>
@@ -1418,6 +1450,8 @@ async function publishPost() {
       category: state.category,
       imageUrl: state.draftImage,
       videoUrl: video || null,
+      // Member view queues the admin's own post the way any member's goes in.
+      asMember: !state.isAdmin,
     });
     $('postText').value = '';
     $('postVideo').value = '';
@@ -1517,7 +1551,7 @@ async function toggleComments(postId) {
 async function addComment(postId, content) {
   const post = state.posts.find(p => p.id === postId);
   try {
-    const result = await api.comment(postId, content);
+    const result = await api.comment(postId, content, { asMember: !state.isAdmin });
     if (result.status === 'approved') {
       if (post) post.comments += 1;
       state.commentsByPost.set(postId, await api.comments(postId));
@@ -1690,6 +1724,20 @@ function updateCharCount() {
 }
 
 /* ---------------- sign in / create account ---------------- */
+// One account system, two doors. The member door shows the member side of the site even to the
+// admin's own account; the admin door is what reveals the admin view. Remembering which door was
+// used keeps a reload from quietly promoting a member-view session into the admin view.
+const DOOR_KEY = 'nocturnal-solace.door';
+function doorUsed() {
+  try { return localStorage.getItem(DOOR_KEY) === 'member' ? 'member' : 'admin'; } catch { return 'admin'; }
+}
+function rememberDoor(door) {
+  try { localStorage.setItem(DOOR_KEY, door); } catch { /* private browsing: the session still stands */ }
+}
+function forgetDoor() {
+  try { localStorage.removeItem(DOOR_KEY); } catch { /* nothing was stored */ }
+}
+
 let authMode = 'signin';
 function setAuthMode(mode) {
   authMode = mode;
@@ -1700,7 +1748,9 @@ function setAuthMode(mode) {
   $('authPassword').autocomplete = signingIn ? 'current-password' : 'new-password';
   $('authIgnField').hidden = signingIn;
   $('authHint').textContent = signingIn
-    ? 'Every post, comment, tap and roster request is filed under the account you sign in with.'
+    ? 'This is the member door: any account signs in here, the admin’s own included. You post, '
+      + 'comment, tap, join squads and run the rosters you captain. Staff open the approval tools '
+      + 'through Admin sign-in in the header.'
     : 'Your IGN is required — it is the name the feed shows, and the Members page lists. This gives '
       + 'you the member side of the site: post, comment, tap, join squads and run the roster of any '
       + 'squad you are made captain of.';
@@ -1735,22 +1785,48 @@ async function signInAsStaff(email, password) {
   throw new Error('not_an_admin');
 }
 
-async function applySession(result) {
-  state.isAdmin = Boolean(result?.admin);
+async function applySession(result, door) {
+  state.isAdminAccount = Boolean(result?.admin);
+  // Only the admin door opens the admin view. Signing in through the member door as the admin's
+  // own account gives the member site on purpose, with the admin door one click away.
+  state.isAdmin = door === 'admin' && state.isAdminAccount;
+  if (door) rememberDoor(door);
   state.myUserId = result?.userId || await myUserId();
   state.profile = result?.profile ?? await myProfile();
   paintHeader();
   await refreshAll();
 }
 
+// Reads the session the browser actually holds, for the moments where an attempt may have ended
+// or replaced it (a refused admin sign-in, a mistyped password with a member session open).
+async function syncSession() {
+  state.myUserId = await myUserId();
+  state.isAdminAccount = await hasAdminSession();
+  state.profile = state.myUserId ? await myProfile() : null;
+  state.isAdmin = state.isAdminAccount && doorUsed() === 'admin';
+  paintHeader();
+}
+
 async function signOutUser() {
   await signOutAsAdmin();
+  forgetDoor();
   state.isAdmin = false;
+  state.isAdminAccount = false;
   state.myUserId = null;
   state.profile = null;
   paintHeader();
   await refreshAll();
   toast('Signed out — the queue, the roster tools and the composer are hidden again.');
+}
+
+// Dropping into the member view is instant: the session is already this account and the view only
+// hides tools. Coming back is the admin door, which asks for the password again.
+function switchToMemberView() {
+  state.isAdmin = false;
+  rememberDoor('member');
+  paintHeader();
+  paintRoute();
+  toast('Member view — same account, member side. Admin sign-in brings the admin tools back.');
 }
 
 function bindEvents() {
@@ -1883,7 +1959,10 @@ function bindEvents() {
     if (isSignedIn()) { await signOutUser(); return; }
     openAuthDialog();
   });
-  $('staffButton').addEventListener('click', () => openStaffDialog());
+  $('staffButton').addEventListener('click', () => {
+    if (state.isAdmin) { switchToMemberView(); return; }
+    openStaffDialog();
+  });
 
   $('authToggle').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
   $('authForm').addEventListener('submit', async (event) => {
@@ -1904,13 +1983,13 @@ function bindEvents() {
         : await signUpAccount(email, password, ign);
       $('authDialog').close();
       $('authPassword').value = '';
-      await applySession(result);
+      await applySession(result, 'member');
       if (authMode === 'signin' && !result.profile) {
         navigate('profile');
         toast('Welcome back. Save your profile once and your IGN goes on everything you post.');
       } else {
         toast(result.admin
-          ? 'Signed in. This account is also a site administrator — the Approval tab is in the menu.'
+          ? 'Signed in as a member. This account also runs the site — use Admin sign-in in the header for the approval tools.'
           : 'Signed in. Post, comment, tap and run the rosters of squads you captain.');
       }
     } catch (error) {
@@ -1936,14 +2015,12 @@ function bindEvents() {
       const result = await signInAsStaff(email, password);
       $('staffDialog').close();
       $('staffPassword').value = '';
-      await applySession(result);
-      toast('Signed in as the admin — you can publish, approve, name captains and read the activity log.');
+      await applySession(result, 'admin');
+      toast('Signed in to the admin view — you can publish, approve, name captains and read the activity log.');
     } catch (error) {
-      // A refusal here already ended the session, so the member tools stay closed too.
-      state.isAdmin = false;
-      state.myUserId = null;
-      state.profile = null;
-      paintHeader();
+      // A refusal ends the session, but a mistyped password usually leaves the open one alone, so
+      // show whichever session the browser actually holds instead of assuming it is gone.
+      await syncSession();
       toast(explain(error), true);
     } finally {
       button.disabled = false;
@@ -1960,7 +2037,10 @@ function bindEvents() {
 async function boot() {
   $('footerYear').textContent = String(new Date().getFullYear());
   state.myUserId = await myUserId();
-  state.isAdmin = await hasAdminSession();
+  state.isAdminAccount = await hasAdminSession();
+  // The door this browser last walked through picks the view; it never changes what the database
+  // allows, only what is on screen.
+  state.isAdmin = state.isAdminAccount && doorUsed() === 'admin';
   if (state.myUserId) await loadProfileState();
   paintHeader();
   updateCharCount();

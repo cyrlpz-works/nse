@@ -601,9 +601,10 @@ main > .notice { margin-bottom: 1.5rem; }
 /* ---------------- Admin mode & rank ladder ---------------- */
 .header-tools { display: flex; align-items: center; gap: 0.7rem; }
 #authButton.is-on { border-color: var(--pink); color: var(--pink-bright); background: rgba(255, 45, 120, 0.12); }
-/* The admin door is deliberately quiet next to the member button: same row, no invitation. */
-.staff-btn { font-size: 0.74rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
-.staff-btn:hover { color: var(--pink-bright); }
+/* The member door is the loud one; the admin door is a quiet outlined pill beside it. Both stay
+   visible so an admin can pick either view, without the admin door reading as the normal way in. */
+.staff-btn { color: var(--dim); border-style: dashed; }
+.staff-btn:hover:not(:disabled) { color: var(--pink-bright); border-color: var(--pink); background: rgba(255, 45, 120, 0.12); }
 .field-hint { font-size: 0.74rem; line-height: 1.45; color: var(--dim); }
 .ladder { display: grid; gap: 1px; margin-top: 0.75rem; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
 .ladder-row { display: grid; grid-template-columns: 1.3fr 0.7fr 1.2fr; gap: 0.6rem; padding: 0.6rem 0.85rem; background: var(--bg-elev); font-size: 0.8rem; }
@@ -849,19 +850,28 @@ dialog > form { display: flex; flex-direction: column; min-height: 0; }
   .split { grid-template-columns: 1fr; }
 }
 
-/* The header needs its second row long before the rest of the page does: the brand, the tabs and
-   the account tools only share one line above ~1240px, and under that the tools were pushed clean
+/* The header needs its second row long before the rest of the page does: brand, tabs and the
+   account tools only share one line above ~1240px, and under that the tools were pushed clean
    off the right edge, so the whole page scrolled sideways and Sign in was unreachable. */
 @media (max-width: 1240px) {
   .header-inner { flex-wrap: wrap; gap: 0.6rem 0.85rem; min-height: 60px; padding-block: 0.6rem; }
-  /* Dropping the tagline is what keeps the brand and the tools on one line instead of three rows.
-     The full name still appears in the hero and the footer. */
-  .brand-text span { display: none; }
   .nav { order: 3; width: 100%; margin-left: 0; overflow-x: auto; padding-bottom: 0.15rem; scrollbar-width: none; }
   .nav::-webkit-scrollbar { display: none; }
   .header-tools { order: 2; margin-left: auto; gap: 0.5rem; }
+  /* Dropping the tagline and the name is what keeps the two door buttons and the avatar on one
+     line instead of three. The full name still appears in the hero and the footer. */
+  .brand-text span { display: none; }
   .header-user { margin-left: 0; padding-left: 0; border-left: 0; }
   .header-user-meta { display: none; }
+}
+
+/* The admin view carries one more tab (Approval) and a second door, which pushes the tools past the
+   right edge on a 1366-wide screen. Only that view takes the second row this early. */
+@media (max-width: 1460px) {
+  .site-header.is-admin .header-inner { flex-wrap: wrap; gap: 0.6rem 0.85rem; min-height: 60px; padding-block: 0.6rem; }
+  .site-header.is-admin .nav { order: 3; width: 100%; margin-left: 0; overflow-x: auto; padding-bottom: 0.15rem; scrollbar-width: none; }
+  .site-header.is-admin .nav::-webkit-scrollbar { display: none; }
+  .site-header.is-admin .header-tools { order: 2; margin-left: auto; }
 }
 
 @media (max-width: 760px) {

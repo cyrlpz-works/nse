@@ -64,10 +64,16 @@ With email confirmation off, anyone can also create their own account from the s
 **Create an account** button — that is how members, captains and the leaderboard get populated.
 It does not make them an admin: only a row in `site_admins` does.
 
-There are two doors in the header, and both speak to the same account system: **Sign in** is the
-member door (sign in, sign up), **Admin** is a quiet one that signs an account in and then signs it
-straight back out again unless it is listed in `site_admins`. Neither door grants a permission —
-they only decide which words a visitor reads before typing a password.
+There are two doors in the header, and both speak to the same account system. **Sign in** is the
+member door: any account uses it, the admin's own included, and it gives the member side of the
+site — post, comment, tap, join squads, run the rosters you captain. **Admin sign-in** is the staff
+door: it opens the admin view (approval queue, squads, captains, activity log) and signs an account
+straight back out unless it is listed in `site_admins`. The admin's account can therefore use either
+door — be a member on the site it runs, then sign back in as the admin. In the admin view that same
+header button reads **Member view** and switches without signing out; the admin door, with its
+password, is how the tools come back. The choice is remembered for that browser until sign-out.
+Neither door grants a permission: a row in `site_admins` does, and the database checks it on every
+write.
 
 The anon key is meant to be public — it identifies the project, it does not grant access.
 Every request is checked against the policies in `supabase/schema.sql`. The **service_role**

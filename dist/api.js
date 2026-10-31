@@ -138,9 +138,11 @@ const POST_EMBED = 'id,user_id,author,rank,category,content,image_url,video_url,
 // A queued row is now visible to its author, but nothing is ever read back after an INSERT by
 // someone who cannot see it -- an invisible RETURNING is reported by PostgREST as an RLS
 // violation (42501), which used to look exactly like a member being refused permission to post.
-async function insertRow(table, row) {
+async function insertRow(table, row, { asMember = false } = {}) {
   const db = await client();
-  const status = await isSiteAdmin(db) ? 'approved' : 'pending';
+  // The admin view publishes straight away; the member view sends even the admin's own account
+  // through the queue a member uses, which is why the caller passes the view down.
+  const status = !asMember && await isSiteAdmin(db) ? 'approved' : 'pending';
   await run(db.from(table).insert({ ...row, status }));
   return { status };
 }
@@ -593,7 +595,7 @@ export const api = {
     }));
   },
 
-  async post({ content, category, imageUrl, videoUrl }) {
+  async post({ content, category, imageUrl, videoUrl, asMember = false }) {
     const db = await client();
     const profile = await requireProfile(db);
     const text = String(content ?? '').trim().slice(0, MAX_POST);
@@ -602,7 +604,7 @@ export const api = {
     if (text.length < 3 && !image && !video) throw new Error('invalid_input');
     if (text.length > MAX_POST) throw new Error('post_too_long');
     if (video && !youTubeId(video)) throw new Error('video_not_youtube');
-    if (!(await isSiteAdmin(db))) assertCooldown('posts');
+    if (asMember || !(await isSiteAdmin(db))) assertCooldown('posts');
     const result = await insertRow('posts', {
       user_id: profile.user_id,
       // A snapshot for the case where the account is deleted later; the live profile is what the
@@ -613,23 +615,23 @@ export const api = {
       content: text,
       image_url: image,
       video_url: video,
-    });
+    }, { asMember });
     await logActivity('post_submit', profile.ign);
     return result;
   },
 
-  async comment(postId, content) {
+  async comment(postId, content, { asMember = false } = {}) {
     const db = await client();
     const profile = await requireProfile(db);
     const text = String(content ?? '').trim().slice(0, 300);
     if (text.length < 2) throw new Error('invalid_input');
-    if (!(await isSiteAdmin(db))) assertCooldown('comments');
+    if (asMember || !(await isSiteAdmin(db))) assertCooldown('comments');
     const result = await insertRow('comments', {
       post_id: postId,
       user_id: profile.user_id,
       author: profile.ign,
       content: text,
-    });
+    }, { asMember });
     await logActivity('comment_submit', profile.ign);
     return result;
   },

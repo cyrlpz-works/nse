@@ -19,7 +19,7 @@
 <!-- Both numbers must change whenever styles.css or app.js change. Pages caches each file for ten
      minutes, so without a new query a visitor can load this page with yesterday's script -- which
      is how a fixed layout keeps looking broken to one person. -->
-<link rel="stylesheet" href="styles.css?v=2026-10-31-7">
+<link rel="stylesheet" href="styles.css?v=2026-10-31-8">
 </head>
 <body>
 <a class="sr-only" href="#main">Skip to content</a>
@@ -46,7 +46,7 @@
 
     <div class="header-tools">
       <button class="btn btn-ghost btn-sm" type="button" id="authButton" aria-haspopup="dialog">Sign in</button>
-      <button class="link-like staff-btn" type="button" id="staffButton" aria-haspopup="dialog">Admin</button>
+      <button class="btn btn-ghost btn-sm staff-btn" type="button" id="staffButton" aria-haspopup="dialog">Admin sign-in</button>
       <button class="header-user" type="button" id="headerUser" aria-label="Open your profile">
         <span class="avatar accent" id="headerAvatar" aria-hidden="true">?</span>
         <span class="header-user-meta">
@@ -313,7 +313,7 @@
         <label for="teamSlots">Roster size</label>
         <input class="input" id="teamSlots" type="number" min="2" max="12" value="5">
       </div>
-      <p class="field-hint">Publishing a squad needs the site admin. It starts with no players: once people apply on its page, you accept them and name one captain to run the roster.</p>
+      <p class="field-hint">Publishing a squad needs the admin view. It starts with no players: name the first applicant captain from its page, and that captain takes over who joins the roster.</p>
     </div>
     <div class="dialog-foot">
       <button class="btn btn-ghost" type="button" data-close-dialog>Cancel</button>
@@ -382,10 +382,10 @@
         <input class="input" id="staffPassword" type="password" autocomplete="current-password" maxlength="200"
           placeholder="at least 6 characters">
       </div>
-      <p class="field-hint">For the people who run this site: approve posts, publish squads, name
+      <p class="field-hint">This door opens the admin view: approve posts, publish squads, name
         captains and read the activity log. An account that is not listed as an administrator is
-        signed straight back out. Members post, comment, tap and run rosters through
-        <b>Sign in</b>.</p>
+        signed straight back out. It replaces the member session on this browser — the member view
+        is one click away through <b>Sign in</b>, and the admin’s own account can use either one.</p>
     </div>
     <div class="dialog-foot">
       <button class="btn btn-ghost" type="button" data-close-staff>Cancel</button>
@@ -395,6 +395,6 @@
 </dialog>
 
 <div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>
-<script src="app.js?v=2026-10-31-7" type="module"></script>
+<script src="app.js?v=2026-10-31-8" type="module"></script>
 </body>
 </html>
