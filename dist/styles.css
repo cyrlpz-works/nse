@@ -736,6 +736,12 @@ dialog::backdrop { background: rgba(4, 4, 7, 0.72); backdrop-filter: blur(3px); 
   background: var(--dim); border: 2px solid var(--bg-elev);
 }
 .online-dot.is-online { background: var(--ok); }
+/* The Home online strip is a row of faces. `.online-dot` is an absolutely positioned corner
+   badge, and reusing it here hung a full-size avatar off the bottom-right of the card -- which
+   stuck out past a phone screen and made the whole page scroll sideways. */
+#homeOnline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+#homeOnline .empty { flex: 1 1 100%; }
+.online-face .avatar { width: 30px; height: 30px; border-radius: 9px; font-size: 0.72rem; }
 .pill {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.45rem 0.85rem; border-radius: 999px;
@@ -816,6 +822,9 @@ dialog::backdrop { background: rgba(4, 4, 7, 0.72); backdrop-filter: blur(3px); 
 
 @media (max-width: 760px) {
   .header-inner { flex-wrap: wrap; gap: 0.6rem 0.85rem; min-height: 60px; padding-block: 0.6rem; }
+  /* The tagline is what pushed the brand and the account tools onto separate rows, which made the
+     sticky header three lines tall on a phone. TRIAS, the hero and the footer still carry it. */
+  .brand-text span { display: none; }
   .nav { order: 3; width: 100%; margin-left: 0; overflow-x: auto; padding-bottom: 0.15rem; scrollbar-width: none; }
   .nav::-webkit-scrollbar { display: none; }
   .header-tools { order: 2; margin-left: auto; gap: 0.5rem; }

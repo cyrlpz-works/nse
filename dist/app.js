@@ -432,7 +432,7 @@ function renderHome() {
   else online.slice(0, 12).forEach(person => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'avatar-btn online-dot is-online';
+    button.className = 'avatar-btn online-face';
     button.dataset.member = person.user_id;
     button.title = `${person.ign} · ${person.rank}`;
     button.innerHTML = avatarMarkup(person);
