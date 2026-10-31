@@ -103,8 +103,8 @@ Known limits of this design, stated plainly:
 - To become a captain, a person needs an account **and** a row on the squad's roster or in its
   applications — that is the only place the site can read an account id from. The step before
   that (applying with an account) is a normal join request.
-- A captain is one account per squad, and only an admin can move it. There is no "step down"
-  button; replace them with another account, or clear the column in the dashboard.
+- A captain is one account per squad, and only an admin can move it — name a replacement or
+  remove the role from the squad page.
 - An anonymous visitor cannot see their own queued post (the database hides pending rows from
   everyone but an admin), so the confirmation is the on-screen message "Sent to the admin".
 - The 60-second pause between submissions is a per-device timer in the browser, not a server

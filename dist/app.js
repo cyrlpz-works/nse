@@ -535,6 +535,9 @@ function renderTeamDetail(teamId) {
   // database already recorded on a join request.
   const candidates = [...roster, ...applicants].filter(entry => entry.user_id);
   const isCaptainHere = Boolean(state.myUserId) && team.captain_user_id === state.myUserId;
+  const currentCaptainName = team.captain_nick
+    || [...roster, ...applicants].find(entry => entry.user_id === team.captain_user_id)?.name
+    || 'an account no longer on this roster';
 
   host.innerHTML = `
     <div class="banner"></div>
@@ -601,6 +604,11 @@ function renderTeamDetail(teamId) {
         <div class="divider"></div>
         <h3 class="panel-sub">Assign the captain</h3>
         <p class="field-hint">Only you can hand a squad to someone. A captain manages that one roster — applications, members — and nothing else. They need an account of their own, which they get from “Create an account” in the sign-in dialog.</p>
+        ${team.captain_user_id ? `
+        <div class="queue-item">
+          <div class="queue-text"><p class="queue-byline"><b>${esc(currentCaptainName)}</b> · holds the captain role now</p></div>
+          <div class="queue-actions"><button class="btn btn-ghost btn-sm" type="button" data-captain-clear="${esc(team.id)}">Remove as captain</button></div>
+        </div>` : ''}
         ${candidates.length ? candidates.map(entry => {
           const current = team.captain_user_id === entry.user_id;
           return `
@@ -888,7 +896,7 @@ async function assignCaptain(teamId, userId, nickname, button) {
     await api.assignCaptain(teamId, userId, nickname);
     await loadTeams();
     paintRoute();
-    toast(`${nickname} now runs that squad’s roster.`);
+    toast(userId ? `${nickname} now runs that squad’s roster.` : 'That squad has no captain now.');
   } catch (error) {
     toast(explain(error), true);
     button.disabled = false;
@@ -1000,6 +1008,12 @@ function bindEvents() {
     const captain = event.target.closest('[data-captain-user]');
     if (captain) {
       assignCaptain(captain.dataset.captainTeam, captain.dataset.captainUser, captain.dataset.captainNick, captain);
+      return;
+    }
+
+    const clearCaptain = event.target.closest('[data-captain-clear]');
+    if (clearCaptain) {
+      assignCaptain(clearCaptain.dataset.captainClear, null, null, clearCaptain);
       return;
     }
 

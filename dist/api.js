@@ -382,11 +382,12 @@ export const api = {
   },
 
   // Only an admin names a captain, and only the database can add someone to site_admins.
+  // A null account clears the role, which is how a wrong assignment gets undone.
   async assignCaptain(teamId, userId, nickname) {
     const db = await client();
     if (!(await isSiteAdmin(db))) throw new Error('admin_required');
     const result = await run(db.from('teams')
-      .update({ captain_user_id: userId, captain_nick: clamp(nickname, 24) })
+      .update({ captain_user_id: userId || null, captain_nick: userId ? clamp(nickname, 24) : null })
       .eq('id', teamId)
       .select('id'));
     if (!result.data?.length) throw new Error('not_found');
