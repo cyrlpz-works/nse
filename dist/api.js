@@ -1,9 +1,11 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-// The SDK is loaded from a CDN so the site stays a plain static deploy (GitHub Pages).
-// It is imported lazily: if the CDN or the database is unreachable the app still
-// renders, and boot() reports the missing backend instead of breaking the page.
-const SDK_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+// The SDK ships with the site (vendor/supabase.min.js) instead of coming from a CDN: a first
+// visit used to wait on jsdelivr and then fetch six more module files one after another, which
+// was most of the cold start. It still loads lazily, so a page with no database configured
+// renders and boot() reports the missing backend instead of breaking.
+// Bump the version when the vendored file is replaced.
+const SDK_FILE = './vendor/supabase.min.js?v=2.118.0-1';
 const QUERY_TIMEOUT_MS = 12000;
 const MAX_POST = 1200;
 const SUBMIT_COOLDOWN_MS = 60000;
@@ -49,18 +51,33 @@ export function isConfigured() {
     && (PUBLISHABLE_KEY.test(key) || LEGACY_JWT.test(key));
 }
 
+// The bundle is a classic script that leaves one global, so it is appended rather than imported;
+// the promise is kept so ten simultaneous first requests still trigger one download.
+let sdkTask = null;
+function loadSdk() {
+  if (globalThis.supabase?.createClient) return Promise.resolve(globalThis.supabase);
+  if (!sdkTask) {
+    sdkTask = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = SDK_FILE;
+      script.onload = () => (globalThis.supabase?.createClient
+        ? resolve(globalThis.supabase)
+        : reject(new Error('backend_missing')));
+      script.onerror = () => reject(new Error('backend_missing'));
+      document.head.append(script);
+    }).catch(error => { sdkTask = null; throw error; });
+  }
+  return sdkTask;
+}
+
 let clientTask = null;
 function client() {
   if (!isConfigured()) return Promise.reject(new Error('backend_missing'));
   if (!clientTask) {
-    clientTask = import(SDK_URL)
-      .then(module => {
-        const createClient = module.createClient ?? module.default?.createClient;
-        if (!createClient) throw new Error('backend_missing');
-        return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          auth: { persistSession: true, autoRefreshToken: true },
-        });
-      })
+    clientTask = loadSdk()
+      .then(sdk => sdk.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true },
+      }))
       .catch(error => { clientTask = null; throw error; });
   }
   return clientTask;
@@ -248,12 +265,6 @@ async function requireProfile(db) {
 }
 
 export const api = {
-  health: async () => {
-    const db = await client();
-    await run(db.from('posts').select('id', { count: 'exact', head: true }));
-    return { ok: true };
-  },
-
   /* ---------------- profile ---------------- */
   // A profile row is the account's public card. Inserting happens only through signUpAccount or
   // through the first save here, so a sign-in created before this schema still gets a card.
@@ -656,14 +667,16 @@ export const api = {
   /* ---------------- directory numbers ---------------- */
   async stats() {
     const db = await client();
-    const [posts, comments, teams, members] = await Promise.all([
+    const cutoff = new Date(Date.now() - ONLINE_WITHIN_MS).toISOString();
+    // The online list used to run after the four counts, adding a whole round trip to the first
+    // paint for a number that is read at the same time as the others.
+    const [posts, comments, teams, members, online] = await Promise.all([
       run(db.from('posts').select('id', { count: 'exact', head: true }).eq('status', 'approved')),
       run(db.from('comments').select('id', { count: 'exact', head: true }).eq('status', 'approved')),
       run(db.from('teams').select('id', { count: 'exact', head: true })),
       run(db.from('profiles').select('user_id', { count: 'exact', head: true })),
+      run(db.from('profiles').select('user_id').gt('last_seen_at', cutoff).limit(500)),
     ]);
-    const cutoff = new Date(Date.now() - ONLINE_WITHIN_MS).toISOString();
-    const online = await run(db.from('profiles').select('user_id').gt('last_seen_at', cutoff).limit(500));
     return {
       posts: posts.count ?? 0,
       comments: comments.count ?? 0,
@@ -698,19 +711,22 @@ export const api = {
     let entries = [];
     let artwork = [];
     if (ids.length) {
-      const found = await run(db.from('join_requests')
-        .select('id,team_id,nickname,status,user_id,created_at,profiles(user_id,ign,avatar_url,rank)')
-        .in('team_id', ids)
-        .order('created_at')
-        .limit(2000));
+      // The roster and the artwork are independent, so they travel in one wave rather than two.
+      const [found, media] = await Promise.all([
+        run(db.from('join_requests')
+          .select('id,team_id,nickname,status,user_id,created_at,profiles(user_id,ign,avatar_url,rank)')
+          .in('team_id', ids)
+          .order('created_at')
+          .limit(2000)),
+        // Not wrapped in run(): a project that has not yet been given the team_media table answers
+        // with a missing relation, and a squad page with no artwork is worth more than a squad page
+        // that refuses to load.
+        db.from('team_media')
+          .select('team_id,logo_url,banner_url')
+          .in('team_id', ids)
+          .limit(ids.length),
+      ]);
       entries = found.data || [];
-      // Awaited without run(): a project that has not yet been given the team_media table answers
-      // with a missing relation, and a squad page with no artwork is worth more than a squad page
-      // that refuses to load.
-      const media = await db.from('team_media')
-        .select('team_id,logo_url,banner_url')
-        .in('team_id', ids)
-        .limit(ids.length);
       artwork = media.data || [];
     }
     return teams.map(team => {

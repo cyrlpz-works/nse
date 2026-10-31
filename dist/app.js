@@ -3,7 +3,7 @@
 import {
   api, isConfigured, signIn, signUpAccount, signOutAsAdmin, hasAdminSession, myUserId, myProfile,
   RANK_TIERS, MP_ROLES, BR_CLASSES, EXEC_POSITIONS, CATEGORIES, youTubeId,
-} from './api.js?v=2026-10-31-9';
+} from './api.js?v=2026-10-31-10';
 
 // The ladder has no subdivisions any more: a tier is the whole rank, and a Legendary carries the
 // points that place them on the leaderboard.
@@ -1394,13 +1394,16 @@ async function toJpeg(file, maxEdge, quality) {
 }
 
 /* ---------------- data loading ---------------- */
-async function loadProfileState() {
-  state.profile = await myProfile();
+// A request that never reached Supabase (no network, no configured project) means no write can
+// land either, so the page stops offering a composer that would fail. A missing table or an RLS
+// refusal is a normal answer from a reachable database and does not take the site offline.
+function noteOffline(error) {
+  if (error?.message === 'network_error' || error?.message === 'backend_missing') state.offline = true;
 }
 
 async function loadTeams() {
   try { state.teams = await api.teams(); }
-  catch { state.teams = []; if (!state.offline) toast('Squads could not be loaded.', true); }
+  catch (error) { state.teams = []; noteOffline(error); if (!state.offline) toast('Squads could not be loaded.', true); }
 }
 
 async function loadPosts({ reset = true } = {}) {
@@ -1414,24 +1417,31 @@ async function loadPosts({ reset = true } = {}) {
 
 async function loadStats() {
   try { state.stats = await api.stats(); }
-  catch { state.stats = null; }
+  catch (error) { state.stats = null; noteOffline(error); }
 }
 
 async function loadMembers() {
   try { state.members = await api.members(); }
-  catch { state.members = []; }
+  catch (error) { state.members = []; noteOffline(error); }
 }
 
 async function loadLeaderboard() {
   try { state.leaderboard = await api.leaderboard(); }
-  catch { state.leaderboard = []; }
+  catch (error) { state.leaderboard = []; noteOffline(error); }
 }
 
 async function refreshAll() {
-  await Promise.all([loadTeams(), loadStats(), loadMembers(), loadLeaderboard()]);
-  try { await loadPosts({ reset: true }); }
-  catch { if (!state.offline) toast('The feed could not be loaded.', true); }
+  // The feed is one wave of its own (its likes and comments follow it), so it starts beside the
+  // directory queries instead of behind them.
+  await Promise.all([
+    loadTeams(), loadStats(), loadMembers(), loadLeaderboard(),
+    loadPosts({ reset: true }).catch(error => {
+      noteOffline(error);
+      if (!state.offline) toast('The feed could not be loaded.', true);
+    }),
+  ]);
   paintRoute();
+  paintAdminUi();
 }
 
 /* ---------------- actions ---------------- */
@@ -1803,9 +1813,15 @@ async function applySession(result, door) {
 // or replaced it (a refused admin sign-in, a mistyped password with a member session open).
 async function syncSession() {
   state.myUserId = await myUserId();
-  state.isAdminAccount = await hasAdminSession();
-  state.profile = state.myUserId ? await myProfile() : null;
-  state.isAdmin = state.isAdminAccount && doorUsed() === 'admin';
+  // Both read the same local session and neither needs the other's answer, so they are asked
+  // together: the account checks cost one round trip instead of two before the header settles.
+  const [admin, profile] = await Promise.all([
+    state.myUserId ? hasAdminSession() : false,
+    state.myUserId ? myProfile() : null,
+  ]);
+  state.isAdminAccount = admin;
+  state.profile = profile;
+  state.isAdmin = admin && doorUsed() === 'admin';
   paintHeader();
 }
 
@@ -2035,24 +2051,95 @@ function bindEvents() {
   window.addEventListener('hashchange', paintRoute);
 }
 
+/* ---------------- fresh deploy ----------------
+   GitHub Pages gives every file ten minutes of browser caching, index.html included, so a tab
+   that was open when a deploy landed keeps serving the old page and its old ?v= numbers until
+   someone presses refresh -- which is what makes a fix look like it needs a refresh to appear.
+   The build string is read from this module's own URL, so it always names what is running;
+   version.json is the one file the deploy bumps. */
+const BUILD = new URL(import.meta.url).searchParams.get('v') || '';
+const BUILD_CHECK_MS = 5 * 60 * 1000;
+const RELOAD_QUIET_MS = 30000;
+
+// A reload is only safe when there is nothing to lose on screen: no open dialog (a half-typed
+// sign-in), no draft post, no typed-but-unfocused comment, no open profile form, and no text in
+// the field being typed into.
+function canReloadNow() {
+  if (document.querySelector('dialog[open]')) return false;
+  if (($('postText')?.value || '').trim() || ($('postVideo')?.value || '').trim()) return false;
+  if (state.draftImage) return false;
+  if (document.getElementById('profileForm')) return false;
+  const comments = [...document.querySelectorAll('[data-comments-panel] input')];
+  if (comments.some(input => input.value.trim())) return false;
+  const field = document.activeElement;
+  return !(field && /^(INPUT|TEXTAREA)$/.test(field.tagName) && String(field.value).trim());
+}
+
+let buildNoteShown = false;
+function offerNewBuild() {
+  if (buildNoteShown) return;
+  buildNoteShown = true;
+  const note = document.createElement('div');
+  note.className = 'build-note';
+  note.setAttribute('role', 'status');
+  const text = document.createElement('span');
+  text.textContent = 'A new version of the site is ready.';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn-primary btn-sm';
+  button.textContent = 'Reload';
+  button.addEventListener('click', () => window.location.reload());
+  note.append(text, button);
+  document.body.append(note);
+}
+
+async function checkForNewBuild() {
+  if (!BUILD) return;
+  let remote = '';
+  try {
+    const response = await fetch(`${new URL('version.json', import.meta.url)}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) return;
+    remote = String((await response.json()).build || '');
+  } catch { return; }
+  if (!remote || remote === BUILD) return;
+
+  // Reload on its own once, and only while idle. If the page is still stale afterwards (the
+  // browser kept the old index.html), the next look offers the button instead of reloading in
+  // a loop.
+  let lastReload = 0;
+  try { lastReload = Number(sessionStorage.getItem('nocturnal-solace.reloadAt')) || 0; } catch { /* no storage */ }
+  if (canReloadNow() && Date.now() - lastReload > RELOAD_QUIET_MS) {
+    try { sessionStorage.setItem('nocturnal-solace.reloadAt', String(Date.now())); } catch { /* no storage */ }
+    window.location.reload();
+    return;
+  }
+  offerNewBuild();
+}
+
+function startBuildWatch() {
+  if (!BUILD) return;
+  setTimeout(checkForNewBuild, 2500);
+  setInterval(checkForNewBuild, BUILD_CHECK_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForNewBuild(); });
+}
+
 /* ---------------- boot ---------------- */
 async function boot() {
   $('footerYear').textContent = String(new Date().getFullYear());
-  state.myUserId = await myUserId();
-  state.isAdminAccount = await hasAdminSession();
-  // The door this browser last walked through picks the view; it never changes what the database
-  // allows, only what is on screen.
-  state.isAdmin = state.isAdminAccount && doorUsed() === 'admin';
-  if (state.myUserId) await loadProfileState();
-  paintHeader();
   updateCharCount();
   bindEvents();
 
   $('homeStats').innerHTML = '<div class="skeleton" style="min-height:80px"></div>'.repeat(4);
-  try { await api.health(); }
-  catch { state.offline = true; }
+  // Nothing in the feed depends on who is signed in, so the first data request goes out while the
+  // session is still being read. One connection reaches Supabase either way, and waiting for the
+  // account checks first put two extra round trips in front of the first post.
+  await Promise.all([syncSession(), refreshAll()]);
   paintAdminUi();
-  await refreshAll();
+  // The data can land before the session does, so the view is drawn once more now that both are
+  // known -- a #profile link opened directly would otherwise still show the guest card.
+  paintRoute();
+
+  startBuildWatch();
 
   // Keep the shared feed reasonably fresh without spamming the server, and keep this account
   // counted as online while the tab is actually being used.

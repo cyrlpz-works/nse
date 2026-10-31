@@ -27,10 +27,12 @@ Live: https://cyrlpz-works.github.io/nse/
 ```
 dist/            published website (index.html, styles.css, app.js, api.js, config.js)
 dist/config.js   the two Supabase values — the only file you edit to connect the site
+dist/vendor/     supabase.min.js, the client library served from this site instead of a CDN
+dist/version.json the build the site expects; the running page compares itself against it
 supabase/        schema.sql: tables, RLS policies, CHECK rules, storage buckets (run this in Supabase)
 index.html       redirect stub so GitHub Pages opens the app in dist/
 legacy/          the original single-file page, kept for reference
-dev/             preview-server.mjs — serves dist/ locally; never published
+dev/             preview-server.mjs serves dist/ locally; bump.mjs rewrites the version; never published
 ```
 
 `supabase/schema.sql` is the only file that belongs in the Supabase SQL Editor — it is written
@@ -259,9 +261,20 @@ git push origin main
 ```
 
 Pages caches every file for ten minutes, so a visitor can load a fresh page with an old script
-and see a layout that has already been repaired. `dist/index.html` asks for `styles.css` and
-`app.js` with a `?v=` number — **change that number in both places whenever either file
-changes**, and the browser has no choice but to fetch the new one.
+unless the URLs change with each deploy. One command rewrites the `?v=` number in
+`dist/index.html` (stylesheet, module and preload links), the same number on `app.js`'s import of
+`api.js`, and `dist/version.json`:
+
+```bash
+node dev/bump.mjs 2026-11-01-1
+```
+
+Run it before every push that touches `dist/`, and change the `?v=` on the vendored Supabase file
+only when `dist/vendor/supabase.min.js` itself is replaced. Even if someone opens the site just
+before a deploy and the browser keeps the old `index.html`, the page checks `version.json` on
+load, when the tab regains focus and every five minutes; when the numbers differ it reloads by
+itself once the composer, dialogs and focused fields are empty, and otherwise shows a Reload
+button. No visitor has to press refresh to see a deploy.
 
 Pages serves files only, so the community data must come from Supabase (steps above). An
 earlier plan put this logic in a Qoder Sites Edge Function; the account's backend quota blocked
