@@ -17,15 +17,11 @@ dist/config.js   the two Supabase values — the only file you edit to connect t
 supabase/        schema.sql: tables, RLS policies, CHECK rules (run this in Supabase)
 index.html       redirect stub so GitHub Pages opens the app in dist/
 legacy/          the original single-file page, kept for reference
-functions/       unused Edge Function from the earlier Qoder Sites plan (not deployed)
-functions/app-schema.legacy.sql
-                 that Function's app.* schema — **not** the Supabase schema
-dev/             local-only helpers; never published
+dev/             preview-server.mjs — serves dist/ locally; never published
 ```
 
-Only `supabase/schema.sql` belongs in the Supabase SQL Editor. The legacy one creates tables
-in an `app` schema that does not exist on Supabase, and fails with
-`ERROR: 3F000: schema "app" does not exist`.
+`supabase/schema.sql` is the only file that belongs in the Supabase SQL Editor — it is written
+for Supabase's `public` schema and its own `auth.uid()` / `auth.role()` helpers.
 
 ## Connect the site to Supabase (one-time, free)
 
@@ -61,8 +57,10 @@ role is `anon` until the admin signs in.
 
 ```bash
 node dev/preview-server.mjs 4173     # http://127.0.0.1:4173 serves dist/
-node dev/local-check.mjs             # contract checks for the unused functions/ path
 ```
+
+It only serves files. `dist/` talks to Supabase directly, so the preview runs the real feed,
+queue and sign-in against your project — no fake backend in the middle.
 
 With empty values in `dist/config.js` the site still renders: it shows the design, empty
 feed and squads, and one notice explaining that no database is connected. Nothing is
@@ -172,9 +170,9 @@ under whatever subpath the repository is published from (`/TRIAS-Community/` tod
 git push origin main
 ```
 
-Pages serves files only, so the community data must come from Supabase (steps above). The
-`functions/` directory is the earlier Qoder Sites plan, which the account's backend quota
-blocked; it is not reachable from Pages and nothing in `dist/` calls it.
+Pages serves files only, so the community data must come from Supabase (steps above). An
+earlier plan put this logic in a Qoder Sites Edge Function; the account's backend quota blocked
+it, and that code has been removed. Nothing in `dist/` expects a same-origin API.
 
 ## Editing notes
 
