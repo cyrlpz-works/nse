@@ -1,4 +1,4 @@
-/* ================= TRIAS · CODM Community ================= */
+/* ================= Nocturnal Solace Esports ================= */
 /* Theme: black / white / hot pink */
 
 :root {
@@ -108,7 +108,7 @@ a:hover { text-decoration: underline; }
 .header-inner {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1rem;
   min-height: 68px;
 }
 
@@ -129,21 +129,19 @@ a:hover { text-decoration: underline; }
   background: linear-gradient(140deg, var(--pink) 0%, var(--pink-deep) 100%);
   display: grid;
   place-items: center;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 0.95rem;
-  letter-spacing: -0.04em;
-  color: var(--white);
+  overflow: hidden;
   box-shadow: var(--shadow-pink);
 }
+/* The emblem art is the mark; the gradient above is only what shows before it loads. */
+.brand-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .brand-text { text-align: left; }
 .brand-text strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 0.98rem;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   line-height: 1.1;
 }
@@ -158,7 +156,7 @@ a:hover { text-decoration: underline; }
 
 .nav-link {
   position: relative;
-  padding: 0.5rem 0.95rem;
+  padding: 0.5rem 0.82rem;
   border: 0;
   background: none;
   border-radius: 999px;
@@ -263,6 +261,7 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
   transition: transform 0.16s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
@@ -851,12 +850,12 @@ dialog > form { display: flex; flex-direction: column; min-height: 0; }
 }
 
 /* The header needs its second row long before the rest of the page does: the brand, the tabs and
-   the account tools only share one line above ~1100px, and under that the tools were pushed clean
+   the account tools only share one line above ~1240px, and under that the tools were pushed clean
    off the right edge, so the whole page scrolled sideways and Sign in was unreachable. */
-@media (max-width: 1100px) {
+@media (max-width: 1240px) {
   .header-inner { flex-wrap: wrap; gap: 0.6rem 0.85rem; min-height: 60px; padding-block: 0.6rem; }
   /* Dropping the tagline is what keeps the brand and the tools on one line instead of three rows.
-     TRIAS, the hero and the footer still carry it. */
+     The full name still appears in the hero and the footer. */
   .brand-text span { display: none; }
   .nav { order: 3; width: 100%; margin-left: 0; overflow-x: auto; padding-bottom: 0.15rem; scrollbar-width: none; }
   .nav::-webkit-scrollbar { display: none; }
@@ -866,6 +865,10 @@ dialog > form { display: flex; flex-direction: column; min-height: 0; }
 }
 
 @media (max-width: 760px) {
+  /* "Nocturnal Solace" is longer than the old one-word brand, so the mark and the name shrink a
+     little to keep the brand and the account tools on one row down to phone widths. */
+  .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+  .brand-text strong { font-size: 0.9rem; letter-spacing: 0.1em; }
   .panel-head { margin-top: -34px; padding: 0 1rem; }
   .panel-head .avatar { width: 70px; height: 70px; font-size: 1.5rem; }
   .panel-body { padding: 1.15rem 1rem; }

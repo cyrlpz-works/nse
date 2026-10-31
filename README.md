@@ -1,8 +1,13 @@
-# TRIAS · CODM Community
+# Nocturnal Solace Esports
 
 Community hub for a Call of Duty Mobile squad community: a news feed of text, screenshots and
 clips, member profiles, squads with join requests, a points leaderboard, and an admin-run
 approval queue.
+
+The GitHub repository is still named `TRIAS-Community` and keeps that address; only the name on
+the site is Nocturnal Solace Esports. The logo lives in `dist/assets/` — `ns-mark.png` is the
+square crop used in the header and as the favicon, `ns-logo.png` is the whole artwork used for
+link previews.
 
 **Everything that writes belongs to an account.** Visitors read the site freely; to post,
 comment, tap a heart, ask to join a squad or edit a profile you sign in first. Nothing a member
