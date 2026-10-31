@@ -830,8 +830,11 @@ function renderTeamDetail(teamId) {
   const slots = Math.max(team.slot_count, roster.length);
   const openSlots = Math.max(0, slots - roster.length);
   const manages = canCaptain(team);
+  const captainless = !team.captain_user_id;
   const removable = roster.filter(entry => entry.id);
-  const candidates = [...roster, ...applicants].filter(entry => entry.user_id);
+  // While the squad has no captain the applicant rows above already carry "Make captain", so this
+  // picker lists only the roster then. Once a captain holds the squad it offers everyone again.
+  const candidates = (captainless ? roster : [...roster, ...applicants]).filter(entry => entry.user_id);
   const isCaptainHere = Boolean(state.myUserId) && team.captain_user_id === state.myUserId;
   const iAmIn = roster.some(entry => entry.user_id === state.myUserId);
   const myRank = state.profile?.rank || 'Unranked';
@@ -900,20 +903,24 @@ function renderTeamDetail(teamId) {
         <p class="field-hint">Leaving is your own decision — no captain or admin needed, and it only touches your row.</p>` : ''}
       ${manages ? `
         <div class="divider"></div>
-        <h3 class="panel-sub">Roster decisions${state.isAdmin && !isCaptainHere ? ' (admin)' : ''}</h3>
-        <p class="field-hint">${team.captain_nick
-          ? `Only ${esc(team.captain_nick)} and the site admin can change this roster. Another squad’s captain sees none of these controls.`
-          : 'No captain is set yet, so you are deciding this roster as the site admin. Naming a captain below hands it over.'}</p>
+        <h3 class="panel-sub">${captainless ? 'Applications' : `Roster decisions${state.isAdmin && !isCaptainHere ? ' (admin)' : ''}`}</h3>
+        <p class="field-hint">${captainless
+          ? 'No captain yet, so nobody is accepting members. Name one of these applicants captain — that also puts them on the roster — and they decide who else joins. Decline clears out spam.'
+          : `Only ${esc(team.captain_nick)} and the site admin can change this roster. Another squad’s captain sees none of these controls.`}</p>
         ${applicants.length ? applicants.map(entry => `
           <div class="queue-item">
             <div class="queue-text">
               <p class="queue-byline">${avatarMarkup(entry)} <b>${esc(entry.name)}</b> · ${esc(entry.rank || 'rank not set')} · applied ${esc(timeAgo(entry.created_at))}${entry.user_id ? '' : ' · no account linked'}</p>
             </div>
             <div class="queue-actions">
-              <button class="btn btn-primary btn-sm" type="button" data-decide="accepted:${esc(entry.id)}">Accept</button>
+              ${captainless
+                ? `<button class="btn btn-primary btn-sm" type="button" data-captain-user="${esc(entry.user_id || '')}" data-captain-team="${esc(team.id)}" data-captain-nick="${esc(entry.name)}" ${entry.user_id ? '' : 'disabled'}>Make captain</button>`
+                : `<button class="btn btn-primary btn-sm" type="button" data-decide="accepted:${esc(entry.id)}">Accept</button>`}
               <button class="btn btn-ghost btn-sm" type="button" data-decide="rejected:${esc(entry.id)}">Decline</button>
             </div>
-          </div>`).join('') : '<p class="field-hint">No applications are waiting.</p>'}
+          </div>`).join('') : `<p class="field-hint">${captainless
+            ? 'Nobody has applied yet. The first player to ask can be named captain here, and they take over from there.'
+            : 'No applications are waiting.'}</p>`}
         ${removable.length ? `
           <p class="field-hint" style="margin-top:1rem">Members you can take off the roster:</p>
           ${removable.map(entry => `
@@ -933,7 +940,7 @@ function renderTeamDetail(teamId) {
           ${artworkFieldMarkup('logo', 'Squad logo', team.logo_url, 'Square works best. It replaces the letters on every squad card and in this page’s head, and is kept at 256 px.')}
           ${artworkFieldMarkup('banner', 'Banner behind the squad', team.banner_url, 'A wide picture, shown across the top of this page behind the squad name. Kept at 1600 px.')}
         </div>` : ''}
-      ${state.isAdmin ? `
+      ${state.isAdmin && (team.captain_user_id || roster.length) ? `
         <div class="divider"></div>
         <h3 class="panel-sub">Assign the captain</h3>
         <p class="field-hint">Only you can hand a squad to someone. A captain runs that one roster — applications, members — and may put their own logo and banner on it. Nothing else on the squad is theirs to change. They need an account of their own, which they get from “Create an account” in the sign-in dialog.</p>
@@ -953,10 +960,9 @@ function renderTeamDetail(teamId) {
                 ${current ? 'disabled' : ''}>${current ? 'Current captain' : 'Make captain'}</button>
             </div>
           </div>`;
-        }).join('') : `<p class="field-hint">${roster.length || applicants.length
-          ? 'Nobody on this roster or in its applications has a linked account yet.'
-          : 'Nobody has applied yet. When someone does, they appear in the decisions list above and you can name one of them captain here.'}</p>`}
-
+        }).join('') : `<p class="field-hint">Nobody ${captainless ? 'on this roster' : 'on this roster or in its applications'} has a linked account yet, so there is nobody to name.</p>`}
+      ` : ''}
+      ${state.isAdmin ? `
         <div class="divider"></div>
         <h3 class="panel-sub">Delete this squad</h3>
         <p class="field-hint">Removes the squad and its applications. This cannot be undone from the site.</p>

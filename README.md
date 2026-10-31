@@ -7,8 +7,9 @@ approval queue.
 **Everything that writes belongs to an account.** Visitors read the site freely; to post,
 comment, tap a heart, ask to join a squad or edit a profile you sign in first. Nothing a member
 publishes reaches the feed until the site admin approves it, so nudity and spam stop at the
-Approval page. Squad captains run their own roster and choose their own squad logo and banner --
-and nothing else.
+Approval page. A squad is published empty: the admin names its first captain from the players who
+applied, and that captain then accepts the rest of the roster. Captains also choose their own squad
+logo and banner -- and nothing else.
 
 The live site is static **GitHub Pages** plus a free **Supabase** project (Postgres with row
 level security, Auth for accounts, Storage for pictures). No server code runs on Pages, and none
@@ -130,6 +131,11 @@ reason -- row level security can filter which ROWS an account updates but never 
 a captain write policy on `teams` would have handed that captain the squad's name and its minimum
 rank along with the logo. The squad record itself stays writable only by an admin, which is what
 keeps one captain out of another captain's roster.
+
+A squad is published with nobody on it. While no captain is named, the admin's roster action is
+"Make captain" on one applicant (which accepts that applicant too) or "Decline"; the squad page
+offers no plain accept until a captain exists. From then on the captain accepts and declines, and
+the admin keeps an override so a stalled or absent captain cannot leave applications stuck.
 
 A rename needs no repair pass. The feed, the comments, the members page and the leaderboard all
 read the author's live `profiles` row, so changing your IGN in Profile changes it everywhere at
